@@ -18,11 +18,11 @@ High-performance secrets scanner written in Rust. Enterprise-ready with SARIF ou
 
 ## Benchmarks
 
-| Repository | Files | FlashAudit | Gitleaks | Speedup |
-|------------|-------|------------|----------|---------|
-| Express | 240 | **0.03s** | 0.09s | 3x |
-| Django | 7,033 | **0.51s** | 3.93s | 8x |
-| Rust Compiler | 57,706 | **1.24s** | 15.23s | **12x** |
+| Repository    | Files  | FlashAudit | Gitleaks | Speedup |
+| ------------- | ------ | ---------- | -------- | ------- |
+| Express       | 240    | **0.03s**  | 0.09s    | 3x      |
+| Django        | 7,033  | **0.51s**  | 3.93s    | 8x      |
+| Rust Compiler | 57,706 | **1.24s**  | 15.23s   | **12x** |
 
 **Precision comparison:**
 | Repository | FlashAudit | Gitleaks | Notes |
@@ -35,11 +35,13 @@ High-performance secrets scanner written in Rust. Enterprise-ready with SARIF ou
 ### Quick Install (Recommended)
 
 **Linux / macOS:**
+
 ```bash
 curl -sSfL https://raw.githubusercontent.com/Ruddxxy/Flash-Audit/main/install.sh | bash
 ```
 
 **Windows (PowerShell):**
+
 ```powershell
 irm https://raw.githubusercontent.com/Ruddxxy/Flash-Audit/main/install.ps1 | iex
 ```
@@ -47,16 +49,19 @@ irm https://raw.githubusercontent.com/Ruddxxy/Flash-Audit/main/install.ps1 | iex
 ### Other Methods
 
 **Cargo (Rust):**
+
 ```bash
 cargo install flash_audit
 ```
 
 **Docker:**
+
 ```bash
 docker run --rm -v "$(pwd):/repo" ghcr.io/ruddxxy/flash-audit:latest /repo
 ```
 
 **From Source:**
+
 ```bash
 git clone https://github.com/Ruddxxy/Flash-Audit.git
 cd Flash-Audit
@@ -99,11 +104,13 @@ flash_audit --report-to https://api.example.com/events \
 ### GitHub Actions
 
 **Basic Usage:**
+
 ```yaml
 - uses: Ruddxxy/Flash-Audit@v1
 ```
 
 **Full Configuration:**
+
 ```yaml
 name: Security Scan
 on: [push, pull_request]
@@ -116,13 +123,14 @@ jobs:
 
       - uses: Ruddxxy/Flash-Audit@v1
         with:
-          path: '.'
-          format: 'sarif'
+          path: "."
+          format: "sarif"
           upload-sarif: true
           fail-on-finding: true
 ```
 
 **PR-only Scanning:**
+
 ```yaml
 - uses: Ruddxxy/Flash-Audit@v1
   with:
@@ -130,6 +138,7 @@ jobs:
 ```
 
 **Manual Setup (without action):**
+
 ```yaml
 - uses: actions/checkout@v4
 
@@ -152,10 +161,11 @@ jobs:
 1. Install pre-commit: `pip install pre-commit`
 
 2. Add to `.pre-commit-config.yaml`:
+
 ```yaml
 repos:
   - repo: https://github.com/Ruddxxy/Flash-Audit
-    rev: v1.0.0  # Use latest version
+    rev: v1.0.0 # Use latest version
     hooks:
       - id: flashaudit
 ```
@@ -163,6 +173,7 @@ repos:
 3. Install: `pre-commit install`
 
 **Manual git hook:**
+
 ```bash
 # .git/hooks/pre-commit
 #!/bin/bash
@@ -207,28 +218,28 @@ Scanned 500 files in 0.12s. 2 errors. 3 secrets found (2 new, 1 fixed).
 
 ## CLI Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `[PATH]` | `.` | Directory to scan |
-| `-f, --format` | json | Output format: `json` or `sarif` |
-| `--rules` | embedded | Path to custom rules.yaml |
-| `--git-diff <REF>` | - | Only scan files changed since REF |
-| `--staged` | false | Only scan staged files |
-| `--entropy` | false | Enable entropy scanning |
-| `--entropy-threshold` | 4.5 | Entropy threshold |
-| `--report-to <URL>` | - | URL to report telemetry events |
-| `--org <ORG>` | - | Organization name for context |
-| `--repo <REPO>` | - | Repository name for context |
-| `--api-key <KEY>` | env | API key (env: `FLASHAUDIT_API_KEY`) |
-| `-v, --verbose` | false | Show debug output |
+| Option                | Default  | Description                         |
+| --------------------- | -------- | ----------------------------------- |
+| `[PATH]`              | `.`      | Directory to scan                   |
+| `-f, --format`        | json     | Output format: `json` or `sarif`    |
+| `--rules`             | embedded | Path to custom rules.yaml           |
+| `--git-diff <REF>`    | -        | Only scan files changed since REF   |
+| `--staged`            | false    | Only scan staged files              |
+| `--entropy`           | false    | Enable entropy scanning             |
+| `--entropy-threshold` | 4.5      | Entropy threshold                   |
+| `--report-to <URL>`   | -        | URL to report telemetry events      |
+| `--org <ORG>`         | -        | Organization name for context       |
+| `--repo <REPO>`       | -        | Repository name for context         |
+| `--api-key <KEY>`     | env      | API key (env: `FLASHAUDIT_API_KEY`) |
+| `-v, --verbose`       | false    | Show debug output                   |
 
 ## Exit Codes
 
-| Code | Meaning |
-|------|---------|
-| 0 | No secrets |
-| 1 | Secrets found |
-| 2 | Error |
+| Code | Meaning       |
+| ---- | ------------- |
+| 0    | No secrets    |
+| 1    | Secrets found |
+| 2    | Error         |
 
 ## Custom Rules
 
@@ -255,23 +266,23 @@ Use: `flash_audit --rules rules.yaml .`
 
 ## Detected Secrets (66 Patterns)
 
-| Category | Patterns |
-|----------|----------|
-| Private Keys | RSA, OpenSSH, EC, PGP, DSA, PuTTY |
-| AWS | Access Key (AKIA), Secret Key |
-| GitHub | ghp_, gho_, ghu_, ghs_, ghr_ |
-| GitLab | glpat-, GR1348941 |
-| Slack | xoxb-, xoxp-, webhooks |
-| Google/Firebase | AIza, OAuth Client, firebaseio.com |
-| Stripe | sk_live_, sk_test_, rk_live_ |
-| Azure | Storage Key, Connection String, SAS Token |
-| DigitalOcean | dop_v1_, doo_v1_, dor_v1_ |
-| Datadog | API Key, App Key |
-| Cloudflare | API Key, API Token |
-| AI Services | OpenAI (sk-), Anthropic (sk-ant-) |
-| HashiCorp Vault | hvs., hvb. |
-| Database URLs | postgres://, mysql://, mongodb://, redis:// |
-| Other | SendGrid, Twilio, NPM, PyPI, Shopify, Discord, Heroku, JWT |
+| Category        | Patterns                                                   |
+| --------------- | ---------------------------------------------------------- |
+| Private Keys    | RSA, OpenSSH, EC, PGP, DSA, PuTTY                          |
+| AWS             | Access Key (AKIA), Secret Key                              |
+| GitHub          | ghp*, gho*, ghu*, ghs*, ghr\_                              |
+| GitLab          | glpat-, GR1348941                                          |
+| Slack           | xoxb-, xoxp-, webhooks                                     |
+| Google/Firebase | AIza, OAuth Client, firebaseio.com                         |
+| Stripe          | sk*live*, sk*test*, rk*live*                               |
+| Azure           | Storage Key, Connection String, SAS Token                  |
+| DigitalOcean    | dop*v1*, doo*v1*, dor*v1*                                  |
+| Datadog         | API Key, App Key                                           |
+| Cloudflare      | API Key, API Token                                         |
+| AI Services     | OpenAI (sk-), Anthropic (sk-ant-)                          |
+| HashiCorp Vault | hvs., hvb.                                                 |
+| Database URLs   | postgres://, mysql://, mongodb://, redis://                |
+| Other           | SendGrid, Twilio, NPM, PyPI, Shopify, Discord, Heroku, JWT |
 
 ## Backend API (Optional)
 
@@ -302,12 +313,12 @@ docker-compose up -d backend
 
 ### API Endpoints
 
-| Endpoint | Method | Auth | Description |
-|----------|--------|------|-------------|
-| `/health` | GET | None | Health check |
-| `/api/v1/state` | GET | X-API-Key | Get active secrets |
-| `/api/v1/events` | POST | X-API-Key | Ingest scan events |
-| `/api/v1/admin/organizations` | POST | X-Admin-Key | Create organization |
+| Endpoint                      | Method | Auth        | Description         |
+| ----------------------------- | ------ | ----------- | ------------------- |
+| `/health`                     | GET    | None        | Health check        |
+| `/api/v1/state`               | GET    | X-API-Key   | Get active secrets  |
+| `/api/v1/events`              | POST   | X-API-Key   | Ingest scan events  |
+| `/api/v1/admin/organizations` | POST   | X-Admin-Key | Create organization |
 
 ### Connect Scanner to Backend
 
