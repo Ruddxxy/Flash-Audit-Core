@@ -1,0 +1,187 @@
+name: 'FlashAudit Secrets Scanner'
+description: 'High-performance secrets scanner - 8-12x faster than Gitleaks with 6x fewer false positives'
+author: 'FlashAudit'
+
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  path:
+    description: 'Path to scan (default: current directory)'
+    required: false
+    default: '.'
+  format:
+    description: 'Output format: json or sarif'
+    required: false
+    default: 'sarif'
+  fail-on-finding:
+    description: 'Fail the workflow if secrets are found'
+    required: false
+    default: 'true'
+  git-diff:
+    description: 'Only scan files changed since this ref (e.g., main, HEAD~1)'
+    required: false
+    default: ''
+  staged-only:
+    description: 'Only scan staged files'
+    required: false
+    default: 'false'
+  entropy:
+    description: 'Enable entropy-based detection'
+    required: false
+    default: 'false'
+  entropy-threshold:
+    description: 'Entropy threshold (default: 4.5)'
+    required: false
+    default: '4.5'
+  rules:
+    description: 'Path to custom rules.yaml file'
+    required: false
+    default: ''
+  version:
+    description: 'FlashAudit version to use (default: latest)'
+    required: false
+    default: 'latest'
+  upload-sarif:
+    description: 'Upload SARIF results to GitHub Security tab'
+    required: false
+    default: 'true'
+
+outputs:
+  findings-count:
+    description: 'Number of secrets found'
+    value: ${{ steps.scan.outputs.findings }}
+  sarif-file:
+    description: 'Path to SARIF output file (if format=sarif)'
+    value: ${{ steps.scan.outputs.sarif_file }}
+  exit-code:
+    description: 'Exit code from FlashAudit (0=clean, 1=findings, 2=error)'
+    value: ${{ steps.scan.outputs.exit_code }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Determine version
+      id: version
+      shell: bash
+      run: |
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          VERSION=$(curl -sSf https://api.github.com/repos/Ruddxxy/Flash-Audit/releases/latest | grep '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Failed to determine latest version"
+            exit 1
+          fi
+        else
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Download FlashAudit
+      shell: bash
+      run: |
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+
+        case "$ARCH" in
+          x86_64) ARCH_NAME="x86_64" ;;
+          aarch64|arm64) ARCH_NAME="aarch64" ;;
+          *) echo "::error::Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+
+        case "$OS" in
+          linux) NAME="flash_audit-linux-${ARCH_NAME}" ;;
+          darwin) NAME="flash_audit-macos-${ARCH_NAME}" ;;
+          *) echo "::error::Unsupported OS: $OS"; exit 1 ;;
+        esac
+
+        DOWNLOAD_URL="https://github.com/Ruddxxy/Flash-Audit/releases/download/v${{ steps.version.outputs.version }}/${NAME}.tar.gz"
+
+        echo "Downloading FlashAudit from: $DOWNLOAD_URL"
+        curl -sSfL "$DOWNLOAD_URL" | tar -xz
+
+        # Find and move binary
+        BINARY=$(find . -maxdepth 2 -name "flash_audit*" -type f ! -name "*.md" ! -name "*.yaml" ! -name "*.tar.gz" | head -1)
+        if [ -z "$BINARY" ]; then
+          echo "::error::Binary not found in archive"
+          exit 1
+        fi
+
+        chmod +x "$BINARY"
+        sudo mv "$BINARY" /usr/local/bin/flash_audit
+
+        echo "FlashAudit installed:"
+        flash_audit --version 2>/dev/null || echo "v${{ steps.version.outputs.version }}"
+
+    - name: Run FlashAudit
+      id: scan
+      shell: bash
+      run: |
+        set +e
+
+        # Build command
+        CMD="flash_audit"
+        CMD="$CMD --format ${{ inputs.format }}"
+
+        if [ -n "${{ inputs.git-diff }}" ]; then
+          CMD="$CMD --git-diff ${{ inputs.git-diff }}"
+        fi
+
+        if [ "${{ inputs.staged-only }}" = "true" ]; then
+          CMD="$CMD --staged"
+        fi
+
+        if [ "${{ inputs.entropy }}" = "true" ]; then
+          CMD="$CMD --entropy --entropy-threshold ${{ inputs.entropy-threshold }}"
+        fi
+
+        if [ -n "${{ inputs.rules }}" ]; then
+          CMD="$CMD --rules ${{ inputs.rules }}"
+        fi
+
+        CMD="$CMD ${{ inputs.path }}"
+
+        echo "Running: $CMD"
+
+        # Run scan
+        if [ "${{ inputs.format }}" = "sarif" ]; then
+          $CMD > flashaudit-results.sarif 2>&1
+          EXIT_CODE=$?
+          echo "sarif_file=flashaudit-results.sarif" >> $GITHUB_OUTPUT
+        else
+          OUTPUT=$($CMD 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+        fi
+
+        echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+        # Count findings (rough estimate from output)
+        if [ "${{ inputs.format }}" = "sarif" ] && [ -f flashaudit-results.sarif ]; then
+          FINDINGS=$(grep -c '"ruleId"' flashaudit-results.sarif 2>/dev/null || echo "0")
+        else
+          FINDINGS=$(echo "$OUTPUT" | grep -c '"rule_id"' 2>/dev/null || echo "0")
+        fi
+        echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+
+        # Handle exit code
+        if [ $EXIT_CODE -eq 0 ]; then
+          echo "::notice::No secrets found"
+        elif [ $EXIT_CODE -eq 1 ]; then
+          echo "::warning::Secrets detected! Found $FINDINGS potential secrets"
+          if [ "${{ inputs.fail-on-finding }}" = "true" ]; then
+            exit 1
+          fi
+        else
+          echo "::error::FlashAudit encountered an error (exit code: $EXIT_CODE)"
+          exit $EXIT_CODE
+        fi
+
+    - name: Upload SARIF to GitHub Security
+      if: inputs.format == 'sarif' && inputs.upload-sarif == 'true' && always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: flashaudit-results.sarif
+        category: flashaudit
+      continue-on-error: true

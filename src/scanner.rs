@@ -1,7 +1,8 @@
 use serde::Serialize;
 use regex::Regex;
 use aho_corasick::AhoCorasick;
-use crate::utils::config::Rule;
+use sha2::{Sha256, Digest};
+use crate::utils::config::{Rule, RiskMetadata};
 use crate::utils::entropy;
 
 #[derive(Debug, Serialize, Clone)]
@@ -11,6 +12,25 @@ pub struct Vulnerability {
     pub match_content: String,
     pub rule_id: String,
     pub description: Option<String>,
+    pub risk: RiskMetadata,
+    #[serde(skip_serializing)]
+    raw_secret: String,
+}
+
+impl Vulnerability {
+    /// Generate a deterministic fingerprint for this finding.
+    /// Logic: SHA256(normalized_secret + rule_id)
+    /// Normalization: trim whitespace and quotes
+    pub fn generate_fingerprint(&self) -> String {
+        let normalized = self.raw_secret
+            .trim()
+            .trim_matches(|c| c == '"' || c == '\'' || c == '`');
+
+        let mut hasher = Sha256::new();
+        hasher.update(normalized.as_bytes());
+        hasher.update(self.rule_id.as_bytes());
+        hex::encode(hasher.finalize())
+    }
 }
 
 /// A compiled rule with both keyword trigger and regex validator
@@ -18,8 +38,9 @@ struct CompiledRule {
     regex: Regex,
     id: String,
     description: Option<String>,
+    risk: RiskMetadata,
     #[allow(dead_code)]
-    keyword: String,  // Fast Aho-Corasick trigger (stored for debugging)
+    keyword: String,
 }
 
 /// Hybrid Scanner: Aho-Corasick pre-filter + Regex validation
@@ -50,6 +71,7 @@ impl Scanner {
                         regex,
                         id: rule.id,
                         description: rule.description,
+                        risk: rule.risk,
                         keyword,
                     });
                 }
@@ -247,6 +269,8 @@ impl Scanner {
                     match_content: redacted,
                     rule_id: rule.id.clone(),
                     description: rule.description.clone(),
+                    risk: rule.risk.clone(),
+                    raw_secret: matched_text.to_string(),
                 });
             }
         }
@@ -271,6 +295,11 @@ impl Scanner {
                 match_content: format!("Entropy: {:.2}", score),
                 rule_id: "HIGH_ENTROPY".to_string(),
                 description: Some("High entropy string detected".to_string()),
+                risk: RiskMetadata {
+                    class: "entropy".to_string(),
+                    impact: "medium".to_string(),
+                },
+                raw_secret: token,
             });
         }
         vulns

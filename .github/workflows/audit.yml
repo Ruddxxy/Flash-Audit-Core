@@ -11,22 +11,42 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Run tests and checks on PRs and pushes
+  check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - name: Check
+      run: cargo check --all-features
+    - name: Clippy
+      run: cargo clippy -- -D warnings
+    - name: Test
+      run: cargo test --all-features
+
+  # Build release binaries when a tag is pushed
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
             name: flash_audit-linux-x86_64
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-22.04
+            name: flash_audit-linux-x86_64-musl
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
             name: flash_audit-linux-aarch64
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
             name: flash_audit-macos-x86_64
           - target: aarch64-apple-darwin
-            os: macos-latest
+            os: macos-14
             name: flash_audit-macos-aarch64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
@@ -45,25 +65,59 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y gcc-aarch64-linux-gnu
 
+    - name: Install musl tools
+      if: contains(matrix.target, 'musl')
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y musl-tools
+
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
       env:
         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
-    - name: Rename binary (Unix)
+    - name: Prepare artifact (Unix)
       if: runner.os != 'Windows'
-      run: mv target/${{ matrix.target }}/release/flash_audit ${{ matrix.name }}
+      shell: bash
+      run: |
+        mkdir -p dist
+        cp target/${{ matrix.target }}/release/flash_audit dist/${{ matrix.name }}
+        cp README.md LICENSE rules.yaml dist/ 2>/dev/null || true
+        cd dist
+        tar -czvf ../${{ matrix.name }}.tar.gz *
+        cd ..
+        shasum -a 256 ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256
 
-    - name: Rename binary (Windows)
+    - name: Prepare artifact (Windows)
       if: runner.os == 'Windows'
-      run: mv target/${{ matrix.target }}/release/flash_audit.exe ${{ matrix.name }}
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path dist
+        Copy-Item "target/${{ matrix.target }}/release/flash_audit.exe" "dist/${{ matrix.name }}"
+        Copy-Item "README.md", "LICENSE", "rules.yaml" "dist/" -ErrorAction SilentlyContinue
+        Compress-Archive -Path "dist/*" -DestinationPath "${{ matrix.name }}.zip"
+        $hash = (Get-FileHash -Algorithm SHA256 "${{ matrix.name }}.zip").Hash.ToLower()
+        "$hash  ${{ matrix.name }}.zip" | Out-File -FilePath "${{ matrix.name }}.zip.sha256" -Encoding ASCII
 
-    - name: Upload artifact
+    - name: Upload artifact (Unix)
+      if: runner.os != 'Windows'
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.name }}
-        path: ${{ matrix.name }}
+        path: |
+          ${{ matrix.name }}.tar.gz
+          ${{ matrix.name }}.tar.gz.sha256
 
+    - name: Upload artifact (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.name }}
+        path: |
+          ${{ matrix.name }}.zip
+          ${{ matrix.name }}.zip.sha256
+
+  # Create GitHub release with all binaries
   publish:
     needs: release
     if: startsWith(github.ref, 'refs/tags/v')
@@ -75,8 +129,20 @@ jobs:
       with:
         path: artifacts
 
+    - name: Flatten artifacts and create checksums
+      run: |
+        mkdir -p release
+        find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} release/ \;
+        cd release
+        # Create combined checksums file
+        for f in *.tar.gz *.zip; do
+          [ -f "$f" ] && shasum -a 256 "$f" >> checksums.txt
+        done
+
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
-        files: artifacts/**/*
+        files: release/*
         generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref, '-') }}

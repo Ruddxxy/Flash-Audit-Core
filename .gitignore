@@ -1,3 +1,4 @@
 /target
 tests/fixtures/
 secrets_test.env
+.flashaudit_state.json

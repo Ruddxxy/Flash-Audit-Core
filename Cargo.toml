@@ -1,28 +1,74 @@
 [package]
 name = "flash_audit"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
+rust-version = "1.70"
 license = "MIT"
-description = "High-performance secrets scanner"
+description = "High-performance secrets scanner written in Rust. 8-12x faster than Gitleaks with 6x fewer false positives."
 repository = "https://github.com/Ruddxxy/Flash-Audit"
+homepage = "https://github.com/Ruddxxy/Flash-Audit"
+documentation = "https://github.com/Ruddxxy/Flash-Audit#readme"
+readme = "README.md"
+keywords = ["security", "secrets", "scanner", "gitleaks", "sast"]
+categories = ["command-line-utilities", "development-tools"]
+authors = ["FlashAudit <mahapatro32@gmail.com>"]
+include = [
+    "src/**/*",
+    "Cargo.toml",
+    "Cargo.lock",
+    "LICENSE",
+    "README.md",
+    "rules.yaml",
+]
 
 [dependencies]
-clap = { version = "4.4", features = ["derive"] }
-rayon = "1.8"
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Parallelization
+rayon = "1.10"
+
+# File I/O
 memmap2 = "0.9"
-regex = "1.10"
+ignore = "0.4"
+
+# Pattern matching
+regex = "1.11"
 aho-corasick = "1.1"
+
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
+
+# Crypto
+sha2 = "0.10"
+hex = "0.4"
+
+# Networking
+ureq = "2.10"
+
+# Concurrency
+crossbeam-channel = "0.5"
+
+# Utilities
 anyhow = "1.0"
-ignore = "0.4"
+urlencoding = "2.1"
+
+# Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-chrono = "0.4"
 
 [profile.release]
 lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
+
+[[bin]]
+name = "flash_audit"
+path = "src/main.rs"

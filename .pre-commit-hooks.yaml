@@ -1,0 +1,37 @@
+# FlashAudit pre-commit hooks
+# See https://pre-commit.com for more information
+#
+# Add to your .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/Ruddxxy/Flash-Audit
+#       rev: v1.0.0  # Use the latest version
+#       hooks:
+#         - id: flashaudit
+#
+# Then run: pre-commit install
+
+- id: flashaudit
+  name: FlashAudit Secrets Scanner
+  description: Detect hardcoded secrets before commit
+  entry: flash_audit --staged .
+  language: system
+  pass_filenames: false
+  stages: [pre-commit]
+  always_run: true
+
+- id: flashaudit-all
+  name: FlashAudit Full Scan
+  description: Scan entire repository for secrets
+  entry: flash_audit .
+  language: system
+  pass_filenames: false
+  stages: [manual]
+
+- id: flashaudit-entropy
+  name: FlashAudit with Entropy Detection
+  description: Detect secrets including high-entropy strings
+  entry: flash_audit --staged --entropy .
+  language: system
+  pass_filenames: false
+  stages: [pre-commit]

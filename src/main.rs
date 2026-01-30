@@ -13,6 +13,8 @@ use scanner::Scanner;
 use utils::file_loader::FileLoader;
 use utils::config::Config;
 use utils::sarif::SarifReport;
+use utils::telemetry::{TelemetryClient, TelemetryEvent, EventType};
+use utils::state::StateContext;
 use tracing::{info, debug, warn, Level};
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -55,6 +57,22 @@ struct Args {
     /// Only scan staged files (for pre-commit hooks)
     #[arg(long, default_value_t = false)]
     staged: bool,
+
+    /// URL to report telemetry events (enables stateful risk tracking)
+    #[arg(long, value_name = "URL")]
+    report_to: Option<String>,
+
+    /// Organization name for telemetry context
+    #[arg(long, default_value = "")]
+    org: String,
+
+    /// Repository name for telemetry context
+    #[arg(long, default_value = "")]
+    repo: String,
+
+    /// API key for state sync authentication
+    #[arg(long, env = "FLASHAUDIT_API_KEY", default_value = "")]
+    api_key: String,
 }
 
 /// Get list of files changed since a git ref
@@ -136,6 +154,34 @@ fn main() {
     let (rule_count, keyword_count) = scanner.stats();
     info!("Loaded {} rules with {} keywords", rule_count, keyword_count);
 
+    // Initialize State Engine (fetch previous state for diff detection)
+    let repo_id = if args.repo.is_empty() {
+        format!("{}/default", args.org)
+    } else if args.repo.contains('/') {
+        args.repo.clone()
+    } else {
+        format!("{}/{}", args.org, args.repo)
+    };
+
+    let state = if let Some(ref report_url) = args.report_to {
+        if !args.api_key.is_empty() {
+            StateContext::fetch(report_url, &args.api_key, &args.org, &repo_id)
+        } else {
+            StateContext::new()
+        }
+    } else {
+        // Try loading from local cache if no remote configured
+        StateContext::load_from(".flashaudit_state.json").unwrap_or_default()
+    };
+    let state = Mutex::new(state);
+
+    // Initialize Telemetry Client (non-blocking background thread)
+    let telemetry = if let Some(ref report_url) = args.report_to {
+        TelemetryClient::new(report_url.clone())
+    } else {
+        TelemetryClient::disabled()
+    };
+
     // File Discovery Phase
     let files: Vec<PathBuf> = if args.staged {
         // Scan only staged files (pre-commit hook mode)
@@ -184,10 +230,10 @@ fn main() {
         for result in walker {
             match result {
                 Ok(entry) => {
-                    if entry.file_type().map_or(false, |ft| ft.is_file()) {
-                        if !entry.path().components().any(|c| c.as_os_str() == ".git") {
-                            files.push(entry.path().to_owned());
-                        }
+                    if entry.file_type().is_some_and(|ft| ft.is_file())
+                        && !entry.path().components().any(|c| c.as_os_str() == ".git")
+                    {
+                        files.push(entry.path().to_owned());
                     }
                 }
                 Err(err) => warn!("Error walking directory: {}", err),
@@ -206,6 +252,8 @@ fn main() {
     let results: Mutex<Vec<scanner::Vulnerability>> = Mutex::new(Vec::new());
     let scanned_count = AtomicUsize::new(0);
     let error_count = AtomicUsize::new(0);
+    let org = args.org.clone();
+    let repo = args.repo.clone();
 
     files.par_iter().for_each(|path| {
         match FileLoader::load(path) {
@@ -221,6 +269,28 @@ fn main() {
                 }
 
                 if !vulns.is_empty() {
+                    // Track findings in state and send telemetry
+                    for vuln in &vulns {
+                        let fingerprint = vuln.generate_fingerprint();
+
+                        // Track in state engine
+                        if let Ok(mut state_lock) = state.lock() {
+                            state_lock.track(fingerprint.clone());
+                        }
+
+                        // Send telemetry event (non-blocking)
+                        telemetry.send(TelemetryEvent {
+                            event_type: EventType::Found,
+                            fingerprint,
+                            rule_id: vuln.rule_id.clone(),
+                            file: vuln.file.clone(),
+                            org: org.clone(),
+                            repo: repo.clone(),
+                            risk_class: vuln.risk.class.clone(),
+                            risk_impact: vuln.risk.impact.clone(),
+                        });
+                    }
+
                     if let Ok(mut lock) = results.lock() {
                         lock.extend(vulns);
                     }
@@ -240,13 +310,43 @@ fn main() {
     let scanned = scanned_count.load(Ordering::Relaxed);
     let errors = error_count.load(Ordering::Relaxed);
 
+    // Post-scan: Detect fixed secrets and send telemetry
+    let state = state.into_inner().unwrap_or_else(|e| e.into_inner());
+    let fixed_hashes = state.get_fixed();
+    let new_count = state.get_new().len();
+    let fixed_count = fixed_hashes.len();
+
+    // Send REMOVED events for fixed secrets
+    for fingerprint in fixed_hashes {
+        telemetry.send(TelemetryEvent {
+            event_type: EventType::Removed,
+            fingerprint,
+            rule_id: String::new(),
+            file: String::new(),
+            org: org.clone(),
+            repo: repo.clone(),
+            risk_class: String::new(),
+            risk_impact: String::new(),
+        });
+    }
+
+    // Save state for next run
+    if let Err(e) = state.save() {
+        debug!("Failed to save state cache: {}", e);
+    }
+
+    // Flush telemetry before exit
+    telemetry.flush();
+
     // Print summary to stderr (doesn't interfere with JSON/SARIF output)
     eprintln!(
-        "Scanned {} files in {:.2}s. {} errors. {} secrets found.",
+        "Scanned {} files in {:.2}s. {} errors. {} secrets found ({} new, {} fixed).",
         scanned,
         duration.as_secs_f64(),
         errors,
-        results.len()
+        results.len(),
+        new_count,
+        fixed_count
     );
 
     // Output in requested format

@@ -1,0 +1,53 @@
+# =============================================================================
+# Render Blueprint for FlashAudit Backend
+# =============================================================================
+#
+# Deploy to Render:
+# 1. Connect your GitHub repo to Render
+# 2. Select "Blueprint" and point to this file
+# 3. Or manually create a Web Service with these settings
+#
+# Manual Setup:
+# - Root Directory: backend
+# - Build Command: pip install -r requirements.txt
+# - Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
+#
+# =============================================================================
+
+services:
+  - type: web
+    name: flashaudit-api
+    runtime: python
+    region: oregon  # Change to your preferred region
+    plan: free  # free, starter, standard, pro
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite:///./data/flashaudit.db
+      - key: ADMIN_KEY
+        generateValue: true  # Render will generate a secure random value
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: ENABLE_DOCS
+        value: "true"
+      - key: RATE_LIMIT_REQUESTS
+        value: "100"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+      - key: PYTHON_VERSION
+        value: "3.12"
+    disk:
+      name: flashaudit-data
+      mountPath: /app/data
+      sizeGB: 1  # 1GB for SQLite storage
+
+# Optional: Use managed PostgreSQL instead of SQLite
+# databases:
+#   - name: flashaudit-db
+#     plan: free  # free, starter, standard, pro
+#     databaseName: flashaudit
+#     user: flashaudit
+#     region: oregon
