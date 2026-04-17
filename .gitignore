@@ -1,4 +1,50 @@
+# Rust
 /target
+
+# Scanner test fixtures (sample secret files used for manual testing)
 tests/fixtures/
 secrets_test.env
 .flashaudit_state.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+venv/
+.venv/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Private working documents (not for public repo)
+ACQUISITION_AUDIT.md
