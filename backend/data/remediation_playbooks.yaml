@@ -1,0 +1,1189 @@
+# =============================================================================
+# FlashAudit Remediation Playbooks
+#
+# Maps each rule_id from rules.yaml to actionable rotation/revocation guidance.
+# Loaded at startup by services/remediation.py via yaml.safe_load().
+# =============================================================================
+
+# =============================================================================
+# Private Keys
+# =============================================================================
+
+RSA_PRIVATE_KEY:
+  provider: "Generic / OpenSSL"
+  blast_radius: "Full authentication to any system trusting this key. Can impersonate the key owner for SSH, TLS, code signing, or encrypted communications."
+  steps:
+    - "Identify all systems that trust this key (authorized_keys, TLS configs, certificate authorities)"
+    - "Generate a new RSA key pair: ssh-keygen -t rsa -b 4096 or openssl genrsa -out new_key.pem 4096"
+    - "Deploy the new public key to all trusting systems"
+    - "Remove the old public key from all authorized_keys files and certificate stores"
+    - "Revoke any certificates signed with the old key"
+    - "Audit access logs for unauthorized usage during the exposure window"
+  console_url: null
+  estimated_minutes: 30
+  auto_revocable: false
+  vault_alternative: "Use HashiCorp Vault SSH Secrets Engine for short-lived SSH certificates instead of long-lived keys"
+  references:
+    - "https://www.ssh.com/academy/ssh/keygen"
+
+OPENSSH_PRIVATE_KEY:
+  provider: "OpenSSH"
+  blast_radius: "SSH access to any server where the corresponding public key is in authorized_keys. Can execute commands, transfer files, and tunnel connections."
+  steps:
+    - "Identify all servers using this key (check ~/.ssh/authorized_keys on each host)"
+    - "Generate a new key: ssh-keygen -t ed25519 -C 'your_email@example.com'"
+    - "Deploy the new public key: ssh-copy-id -i ~/.ssh/new_key.pub user@host"
+    - "Remove the old public key from authorized_keys on every server"
+    - "Update any automated scripts or CI/CD pipelines using this key"
+    - "Check SSH auth logs (/var/log/auth.log) for unauthorized access"
+  console_url: null
+  estimated_minutes: 20
+  auto_revocable: false
+  vault_alternative: "Use HashiCorp Vault SSH Secrets Engine or short-lived SSH certificates via a CA"
+  references:
+    - "https://www.ssh.com/academy/ssh/keygen"
+
+EC_PRIVATE_KEY:
+  provider: "Generic / OpenSSL"
+  blast_radius: "ECDSA/ECDH authentication and signing. Can impersonate the key owner for TLS, SSH, JWT signing, or API authentication."
+  steps:
+    - "Identify all systems trusting this EC key"
+    - "Generate a new EC key: openssl ecparam -genkey -name prime256v1 -out new_key.pem"
+    - "Deploy the new public key and update certificates"
+    - "Remove the old key from all trust stores"
+    - "Revoke any certificates issued with the old key"
+  console_url: null
+  estimated_minutes: 30
+  auto_revocable: false
+  vault_alternative: "Use a secrets manager or certificate authority for short-lived certificates"
+  references:
+    - "https://wiki.openssl.org/index.php/Command_Line_Elliptic_Curve_Operations"
+
+PGP_PRIVATE_KEY:
+  provider: "GnuPG / OpenPGP"
+  blast_radius: "Can decrypt all messages encrypted to this key, forge signatures as the key owner, and impersonate the identity on PGP keyservers."
+  steps:
+    - "Generate a revocation certificate: gpg --gen-revoke KEY_ID"
+    - "Publish the revocation to keyservers: gpg --send-keys KEY_ID"
+    - "Generate a new PGP key pair: gpg --full-generate-key"
+    - "Update your public key on keyservers and notify contacts"
+    - "Re-encrypt any sensitive data with the new key"
+  console_url: null
+  estimated_minutes: 20
+  auto_revocable: false
+  vault_alternative: "Use organizational key management with subkeys and expiry dates"
+  references:
+    - "https://www.gnupg.org/gph/en/manual/c14.html"
+
+DSA_PRIVATE_KEY:
+  provider: "Generic / OpenSSL"
+  blast_radius: "DSA authentication to systems trusting this key. Note: DSA is deprecated in OpenSSH 7.0+ due to security concerns."
+  steps:
+    - "Identify all systems trusting this DSA key"
+    - "Generate a replacement key using a modern algorithm: ssh-keygen -t ed25519"
+    - "Deploy the new key and remove the old DSA key from all authorized_keys"
+    - "Update SSH configurations to disable DSA if possible"
+  console_url: null
+  estimated_minutes: 20
+  auto_revocable: false
+  vault_alternative: "Migrate to Ed25519 keys managed through a secrets vault with automatic rotation"
+  references:
+    - "https://www.ssh.com/academy/ssh/keygen"
+
+PUTTY_PRIVATE_KEY:
+  provider: "PuTTY"
+  blast_radius: "SSH access to servers configured with the corresponding public key. Commonly used on Windows systems for remote server management."
+  steps:
+    - "Open PuTTYgen and generate a new key pair"
+    - "Save the new private key (.ppk) and deploy the public key to servers"
+    - "Remove the old public key from authorized_keys on all servers"
+    - "Update any PuTTY saved sessions to use the new key"
+    - "Securely delete the old .ppk file"
+  console_url: null
+  estimated_minutes: 15
+  auto_revocable: false
+  vault_alternative: "Use OpenSSH keys with a secrets manager instead of PuTTY-format keys"
+  references:
+    - "https://www.chiark.greenend.org.uk/~sgtatham/putty/docs.html"
+
+# =============================================================================
+# AWS
+# =============================================================================
+
+AWS_ACCESS_KEY:
+  provider: "Amazon Web Services"
+  blast_radius: "Full AWS account access scoped to the IAM user's attached policies. Can provision resources, access S3 data, modify infrastructure, and incur charges."
+  steps:
+    - "Go to AWS IAM Console -> Users -> select the affected user"
+    - "Click 'Security credentials' tab -> find the exposed Access Key ID"
+    - "Click 'Deactivate' to immediately prevent usage, then 'Delete' the key"
+    - "Create a new Access Key under the same user"
+    - "Update the key in your application, CI/CD, or environment variables"
+    - "Review CloudTrail logs for unauthorized API calls during the exposure window"
+    - "Check for any resources created by unauthorized access (EC2 instances, S3 buckets, IAM users)"
+  console_url: "https://console.aws.amazon.com/iam/home#/security_credentials"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use IAM Roles for EC2/Lambda instead of long-lived access keys. For external access, use AWS Secrets Manager with automatic rotation or temporary credentials via STS AssumeRole."
+  references:
+    - "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html"
+    - "https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html#rotate-credentials"
+
+AWS_SECRET_KEY:
+  provider: "Amazon Web Services"
+  blast_radius: "Combined with an Access Key ID, grants full API access to AWS services scoped to the IAM user's policies. Can read/write S3, manage EC2, access databases, and incur costs."
+  steps:
+    - "Go to AWS IAM Console -> Users -> select the affected user"
+    - "Click 'Security credentials' tab -> find the associated Access Key ID"
+    - "Click 'Deactivate' then 'Delete' the key pair"
+    - "Create a new Access Key pair and update your application"
+    - "Review CloudTrail for any unauthorized usage"
+    - "If unauthorized access found, follow AWS incident response guide"
+  console_url: "https://console.aws.amazon.com/iam/home#/security_credentials"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use IAM Roles for compute workloads. For external systems, use AWS Secrets Manager with automatic rotation."
+  references:
+    - "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html"
+
+# =============================================================================
+# GitHub
+# =============================================================================
+
+GITHUB_PAT:
+  provider: "GitHub"
+  blast_radius: "Access to all repositories and organizations the token owner can access. Depending on scopes: can read/write code, manage issues, create releases, modify org settings, and access private repos."
+  steps:
+    - "Go to GitHub Settings -> Developer settings -> Personal access tokens"
+    - "Find the compromised token and click 'Delete'"
+    - "Generate a new token with minimum required scopes"
+    - "Update the token in your application or CI/CD environment"
+    - "Review GitHub audit log for the account: Settings -> Security log"
+    - "Check for any unauthorized commits, repo access, or settings changes"
+  console_url: "https://github.com/settings/tokens"
+  estimated_minutes: 5
+  auto_revocable: true
+  vault_alternative: "Use GitHub App installation tokens (short-lived, scoped to specific repos) or fine-grained personal access tokens with minimum permissions"
+  references:
+    - "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
+
+GITHUB_OAUTH:
+  provider: "GitHub"
+  blast_radius: "OAuth token grants access based on authorized scopes. Can access user profile, repos, and organizations as the authorizing user."
+  steps:
+    - "Go to GitHub Settings -> Applications -> Authorized OAuth Apps"
+    - "Revoke the compromised application's access"
+    - "If you control the OAuth App, regenerate the client secret in Developer settings"
+    - "Review audit log for unauthorized actions during exposure"
+  console_url: "https://github.com/settings/applications"
+  estimated_minutes: 5
+  auto_revocable: true
+  vault_alternative: "Use GitHub App installation tokens with granular permissions instead of OAuth tokens"
+  references:
+    - "https://docs.github.com/en/apps/oauth-apps/maintaining-oauth-apps/troubleshooting-oauth-app-access-token-request-errors"
+
+GITHUB_APP_TOKEN:
+  provider: "GitHub"
+  blast_radius: "GitHub user-to-server token. Grants access to resources on behalf of a user through a GitHub App installation."
+  steps:
+    - "Go to GitHub Settings -> Applications -> Installed GitHub Apps"
+    - "Revoke or suspend the GitHub App installation"
+    - "Contact the app developer if the token was leaked by a third-party app"
+    - "Review audit log for actions taken with this token"
+  console_url: "https://github.com/settings/installations"
+  estimated_minutes: 5
+  auto_revocable: true
+  vault_alternative: "GitHub App tokens are already short-lived. Ensure your app refreshes tokens properly."
+  references:
+    - "https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/about-authentication-with-a-github-app"
+
+GITHUB_SERVER_TOKEN:
+  provider: "GitHub"
+  blast_radius: "Server-to-server token for GitHub App installations. Grants access to repos and resources the App is installed on."
+  steps:
+    - "Go to GitHub organization settings -> Installed GitHub Apps"
+    - "Suspend or uninstall the affected GitHub App"
+    - "Regenerate the App's private key in Developer settings"
+    - "Review organization audit log for unauthorized actions"
+  console_url: "https://github.com/settings/apps"
+  estimated_minutes: 5
+  auto_revocable: true
+  vault_alternative: "GitHub server tokens are already short-lived (1 hour). Ensure private keys are stored securely."
+  references:
+    - "https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app"
+
+GITHUB_REFRESH_TOKEN:
+  provider: "GitHub"
+  blast_radius: "Can generate new access tokens for a GitHub App, maintaining persistent access to the user's resources."
+  steps:
+    - "Go to GitHub Settings -> Applications -> Authorized GitHub Apps"
+    - "Revoke the app's authorization to invalidate all tokens"
+    - "Re-authorize the app to get fresh tokens"
+    - "Review audit log for suspicious token usage"
+  console_url: "https://github.com/settings/apps/authorizations"
+  estimated_minutes: 5
+  auto_revocable: true
+  vault_alternative: "Ensure refresh tokens are stored encrypted and rotated on each use"
+  references:
+    - "https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens"
+
+# =============================================================================
+# GitLab
+# =============================================================================
+
+GITLAB_PAT:
+  provider: "GitLab"
+  blast_radius: "Access to all GitLab resources the token owner can reach. Depending on scopes: can read/write repos, manage CI/CD, access container registry, and modify project settings."
+  steps:
+    - "Go to GitLab -> User Settings -> Access Tokens"
+    - "Find the compromised token and click 'Revoke'"
+    - "Create a new token with minimum required scopes and an expiry date"
+    - "Update the token in your application or CI/CD pipelines"
+    - "Review GitLab audit events: Admin -> Monitoring -> Audit Events"
+  console_url: "https://gitlab.com/-/user_settings/personal_access_tokens"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use GitLab CI/CD job tokens (short-lived, scoped to pipeline) or project/group access tokens with minimum scopes and expiry"
+  references:
+    - "https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html"
+
+GITLAB_RUNNER:
+  provider: "GitLab"
+  blast_radius: "Can register new CI/CD runners to your GitLab instance or group, potentially executing arbitrary code in your CI/CD environment."
+  steps:
+    - "Go to GitLab -> Admin Area -> CI/CD -> Runners (or project/group settings)"
+    - "Reset the runner registration token"
+    - "Remove any runners registered with the compromised token"
+    - "Re-register legitimate runners with the new token"
+    - "Review CI/CD pipeline logs for unauthorized job executions"
+  console_url: "https://gitlab.com/admin/runners"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use the new GitLab runner authentication flow with short-lived tokens instead of registration tokens"
+  references:
+    - "https://docs.gitlab.com/runner/register/"
+
+# =============================================================================
+# Slack
+# =============================================================================
+
+SLACK_BOT_TOKEN:
+  provider: "Slack"
+  blast_radius: "Can post messages, read channels, access files, and interact with Slack APIs as the bot. Scope depends on the bot's OAuth permissions."
+  steps:
+    - "Go to api.slack.com -> Your Apps -> select the app"
+    - "Click 'OAuth & Permissions' and rotate the Bot User OAuth Token"
+    - "Update the token in your application"
+    - "Review the app's access logs in Slack's analytics"
+    - "Consider reducing the bot's OAuth scopes to minimum required"
+  console_url: "https://api.slack.com/apps"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Store Slack tokens in a secrets manager. Use socket mode for internal apps to avoid exposing webhook URLs."
+  references:
+    - "https://api.slack.com/authentication/token-types#bot"
+
+SLACK_USER_TOKEN:
+  provider: "Slack"
+  blast_radius: "Can perform actions as the user: read/send messages in all accessible channels, access files, manage workspace settings depending on the user's role."
+  steps:
+    - "Go to api.slack.com -> Your Apps -> select the app"
+    - "Click 'OAuth & Permissions' and rotate the User OAuth Token"
+    - "Update the token in your application"
+    - "Review workspace audit logs for unauthorized actions"
+    - "Notify the affected user to review their Slack activity"
+  console_url: "https://api.slack.com/apps"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use bot tokens with specific scopes instead of user tokens whenever possible"
+  references:
+    - "https://api.slack.com/authentication/token-types#user"
+
+SLACK_WEBHOOK:
+  provider: "Slack"
+  blast_radius: "Can post messages to a specific Slack channel. Cannot read messages or access other channels, but can be used for phishing or spam."
+  steps:
+    - "Go to api.slack.com -> Your Apps -> select the app -> Incoming Webhooks"
+    - "Delete the compromised webhook URL"
+    - "Create a new webhook URL for the target channel"
+    - "Update the URL in your application"
+  console_url: "https://api.slack.com/apps"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use Slack's Workflow Builder for simple notifications, or bot tokens with chat:write scope for programmatic messaging"
+  references:
+    - "https://api.slack.com/messaging/webhooks"
+
+# =============================================================================
+# Google
+# =============================================================================
+
+GOOGLE_API_KEY:
+  provider: "Google Cloud"
+  blast_radius: "Access to Google APIs enabled for the project. Depending on API restrictions: can access Maps, YouTube, Translate, and other Google services. May incur significant charges."
+  steps:
+    - "Go to Google Cloud Console -> APIs & Services -> Credentials"
+    - "Find the exposed API key and click the delete icon"
+    - "Create a new API key with appropriate restrictions (HTTP referrers, IP addresses, API scopes)"
+    - "Update the key in your application"
+    - "Review billing for unexpected charges from API abuse"
+    - "Enable API key restrictions to limit which APIs and origins can use the key"
+  console_url: "https://console.cloud.google.com/apis/credentials"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use service accounts with IAM roles instead of API keys. Restrict API keys to specific referrers and APIs."
+  references:
+    - "https://cloud.google.com/docs/authentication/api-keys"
+
+GOOGLE_OAUTH_CLIENT:
+  provider: "Google Cloud"
+  blast_radius: "OAuth Client ID alone has limited risk, but combined with the client secret, it can be used to initiate OAuth flows and potentially access user data."
+  steps:
+    - "Go to Google Cloud Console -> APIs & Services -> Credentials"
+    - "Find the OAuth 2.0 Client ID and click to edit"
+    - "Reset the client secret"
+    - "Update the client secret in your application"
+    - "Review the OAuth consent screen for any unauthorized changes"
+  console_url: "https://console.cloud.google.com/apis/credentials"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Store OAuth client secrets in a secrets manager. Use workload identity federation for server-to-server auth."
+  references:
+    - "https://cloud.google.com/docs/authentication"
+
+# =============================================================================
+# Stripe
+# =============================================================================
+
+STRIPE_LIVE_SECRET:
+  provider: "Stripe"
+  blast_radius: "CRITICAL: Full access to live payment processing. Can create charges, issue refunds, access customer payment data (cards, bank accounts), modify subscriptions, and transfer funds."
+  steps:
+    - "IMMEDIATELY go to Stripe Dashboard -> Developers -> API keys"
+    - "Click 'Roll key' on the compromised live secret key"
+    - "Update the new key in your application — the old key remains valid for 24 hours during transition"
+    - "Review recent transactions for unauthorized charges or refunds"
+    - "Check for unauthorized Connected accounts or transfers"
+    - "Review Stripe event logs for suspicious API calls"
+    - "Consider enabling Stripe Radar rules to block suspicious activity"
+  console_url: "https://dashboard.stripe.com/apikeys"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use Stripe restricted keys with minimum permissions. Store keys in a secrets manager with automatic rotation."
+  references:
+    - "https://docs.stripe.com/keys#rolling-keys"
+    - "https://docs.stripe.com/keys#limit-access"
+
+STRIPE_TEST_SECRET:
+  provider: "Stripe"
+  blast_radius: "Low direct financial risk (test mode only), but exposes your Stripe account structure, test customer data, and integration details."
+  steps:
+    - "Go to Stripe Dashboard -> Developers -> API keys (toggle to Test mode)"
+    - "Click 'Roll key' on the compromised test secret key"
+    - "Update the new key in your development/staging environment"
+  console_url: "https://dashboard.stripe.com/test/apikeys"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use restricted test keys. Never commit even test keys to version control."
+  references:
+    - "https://docs.stripe.com/keys"
+
+STRIPE_LIVE_RESTRICTED:
+  provider: "Stripe"
+  blast_radius: "Access limited to the specific Stripe API resources the restricted key was configured for. Still dangerous if scoped to charges or customers."
+  steps:
+    - "Go to Stripe Dashboard -> Developers -> API keys -> Restricted keys"
+    - "Delete the compromised restricted key"
+    - "Create a new restricted key with the same permissions"
+    - "Update the key in your application"
+    - "Review API logs for unauthorized usage"
+  console_url: "https://dashboard.stripe.com/apikeys"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Store restricted keys in a secrets manager. Audit key permissions regularly to ensure minimum access."
+  references:
+    - "https://docs.stripe.com/keys#limit-access"
+
+# =============================================================================
+# Database URLs
+# =============================================================================
+
+POSTGRES_URI:
+  provider: "PostgreSQL"
+  blast_radius: "Full database access with the credentials in the connection string. Can read, modify, or delete all data. May allow executing system commands via extensions."
+  steps:
+    - "Connect to PostgreSQL as a superuser"
+    - "Change the password: ALTER USER username WITH PASSWORD 'new_secure_password';"
+    - "Update the connection string in your application and environment variables"
+    - "Review pg_stat_activity for any active suspicious connections"
+    - "Check pg_log for unauthorized queries during the exposure window"
+    - "Consider restricting pg_hba.conf to allow connections only from known IPs"
+  console_url: null
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use HashiCorp Vault Database Secrets Engine for dynamic, short-lived database credentials"
+  references:
+    - "https://www.postgresql.org/docs/current/sql-alterrole.html"
+
+MYSQL_URI:
+  provider: "MySQL"
+  blast_radius: "Full database access scoped to the user's grants. Can read, write, and delete data. With elevated privileges, can modify database structure or access other databases."
+  steps:
+    - "Connect to MySQL as root or admin"
+    - "Change the password: ALTER USER 'username'@'host' IDENTIFIED BY 'new_secure_password';"
+    - "Flush privileges: FLUSH PRIVILEGES;"
+    - "Update the connection string in your application"
+    - "Review the general query log for unauthorized access"
+    - "Verify user grants are at minimum necessary level"
+  console_url: null
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use HashiCorp Vault Database Secrets Engine or AWS RDS IAM authentication for dynamic credentials"
+  references:
+    - "https://dev.mysql.com/doc/refman/8.0/en/alter-user.html"
+
+MONGODB_URI:
+  provider: "MongoDB"
+  blast_radius: "Full access to the MongoDB database with the embedded credentials. Can read, write, and drop collections. If admin role, can modify users and database configuration."
+  steps:
+    - "Connect to MongoDB as admin"
+    - "Change the password: db.changeUserPassword('username', 'new_secure_password')"
+    - "Update the connection string in your application"
+    - "Review MongoDB logs for unauthorized connections"
+    - "Enable MongoDB audit logging if not already active"
+    - "Verify that network access is restricted (IP whitelist for Atlas, firewall for self-hosted)"
+  console_url: null
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use HashiCorp Vault MongoDB plugin or MongoDB Atlas Database Access with temporary credentials"
+  references:
+    - "https://www.mongodb.com/docs/manual/tutorial/change-own-password-and-custom-data/"
+
+REDIS_URI:
+  provider: "Redis"
+  blast_radius: "Full access to the Redis instance. Can read/write all keys, flush databases, and potentially execute Lua scripts. If used for sessions or caching, can hijack user sessions."
+  steps:
+    - "Connect to Redis and change the password: CONFIG SET requirepass 'new_secure_password'"
+    - "Update redis.conf to persist the new password"
+    - "Update the connection string in all applications"
+    - "Review connected clients: CLIENT LIST"
+    - "Check for unauthorized key modifications: MONITOR (briefly)"
+    - "Restrict Redis to bind only to private network interfaces"
+  console_url: null
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use Redis ACLs with per-application users. Consider cloud-managed Redis with IAM-based auth."
+  references:
+    - "https://redis.io/docs/latest/operate/oss_and_stack/management/security/"
+
+# =============================================================================
+# SendGrid
+# =============================================================================
+
+SENDGRID_API_KEY:
+  provider: "Twilio SendGrid"
+  blast_radius: "Can send emails from your domain, access contact lists, view email statistics, and manage templates. Can be used for phishing campaigns from your legitimate domain."
+  steps:
+    - "Go to SendGrid Dashboard -> Settings -> API Keys"
+    - "Delete the compromised API key"
+    - "Create a new API key with minimum required permissions"
+    - "Update the key in your application"
+    - "Review email activity logs for unauthorized sends"
+    - "Check suppression lists for any unauthorized modifications"
+  console_url: "https://app.sendgrid.com/settings/api_keys"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use scoped API keys (Mail Send only) instead of full access keys. Store in a secrets manager."
+  references:
+    - "https://docs.sendgrid.com/ui/account-and-settings/api-keys"
+
+# =============================================================================
+# Twilio
+# =============================================================================
+
+TWILIO_API_KEY:
+  provider: "Twilio"
+  blast_radius: "Can send SMS/MMS, make phone calls, access call recordings, and manage Twilio resources. Can incur significant charges through API abuse."
+  steps:
+    - "Go to Twilio Console -> Account -> API keys & tokens"
+    - "Delete the compromised API key"
+    - "Create a new API key"
+    - "Update the key in your application"
+    - "Review usage logs for unauthorized calls or messages"
+    - "Check billing for unexpected charges"
+  console_url: "https://www.twilio.com/console/project/api-keys"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use Twilio API keys (not Account SID/Auth Token) with limited permissions. Store in a secrets manager."
+  references:
+    - "https://www.twilio.com/docs/iam/api-keys"
+
+TWILIO_AUTH_TOKEN:
+  provider: "Twilio"
+  blast_radius: "Master authentication for the Twilio account. Can access all APIs, send messages, make calls, access recordings, and manage all account resources."
+  steps:
+    - "Go to Twilio Console -> Account -> General Settings"
+    - "Click 'Rotate Auth Token' — the old token remains valid for 24 hours"
+    - "Update the auth token in all applications"
+    - "After migration, click 'Delete old auth token'"
+    - "Review account usage for unauthorized activity"
+  console_url: "https://www.twilio.com/console"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use Twilio API Keys instead of the master Auth Token for application access"
+  references:
+    - "https://www.twilio.com/docs/iam/api/account"
+
+# =============================================================================
+# NPM / PyPI
+# =============================================================================
+
+NPM_TOKEN:
+  provider: "npm"
+  blast_radius: "Can publish packages to npm under your account, modify existing packages, and access private packages. Can be used for supply chain attacks."
+  steps:
+    - "Go to npmjs.com -> Account -> Access Tokens"
+    - "Delete the compromised token"
+    - "Create a new token with appropriate scope (publish or read-only)"
+    - "Update the token in your CI/CD pipelines and .npmrc"
+    - "Review recent package publish events: npm audit signatures"
+    - "Check if any unauthorized versions were published to your packages"
+  console_url: "https://www.npmjs.com/settings/~/tokens"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use granular access tokens with publish scope only for CI/CD. Enable npm 2FA for publishing."
+  references:
+    - "https://docs.npmjs.com/creating-and-viewing-access-tokens"
+
+PYPI_TOKEN:
+  provider: "PyPI"
+  blast_radius: "Can publish packages to PyPI under your account. Can be used for supply chain attacks by publishing malicious package versions."
+  steps:
+    - "Go to pypi.org -> Account Settings -> API tokens"
+    - "Delete the compromised token"
+    - "Create a new token scoped to a specific project (not account-wide)"
+    - "Update the token in your CI/CD pipelines and pypirc"
+    - "Review the project's release history for unauthorized uploads"
+    - "Enable 2FA on your PyPI account if not already active"
+  console_url: "https://pypi.org/manage/account/#api-tokens"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use project-scoped tokens instead of account-wide tokens. Use Trusted Publishers for GitHub Actions."
+  references:
+    - "https://pypi.org/help/#apitoken"
+
+# =============================================================================
+# Shopify
+# =============================================================================
+
+SHOPIFY_ACCESS_TOKEN:
+  provider: "Shopify"
+  blast_radius: "Access to Shopify store data based on app scopes: products, orders, customers, inventory. Can modify store data and access customer PII."
+  steps:
+    - "Go to Shopify Admin -> Settings -> Apps and sales channels"
+    - "Uninstall and reinstall the affected app to regenerate the token"
+    - "Update the token in your application"
+    - "Review store activity logs for unauthorized changes"
+    - "Audit recent orders and customer data access"
+  console_url: "https://admin.shopify.com/settings/apps"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use Shopify session tokens for embedded apps. Store access tokens in a secrets manager."
+  references:
+    - "https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens"
+
+SHOPIFY_SHARED_SECRET:
+  provider: "Shopify"
+  blast_radius: "Used to verify webhook signatures. If compromised, an attacker can forge webhook payloads and inject false data into your integration."
+  steps:
+    - "Go to Shopify Partners -> Apps -> select the app"
+    - "Rotate the app's API credentials"
+    - "Update the shared secret in your webhook verification logic"
+    - "Verify no fraudulent webhooks were processed during exposure"
+  console_url: "https://partners.shopify.com"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Store the shared secret in a secrets manager. Always verify webhook HMAC signatures."
+  references:
+    - "https://shopify.dev/docs/apps/build/webhooks/verify"
+
+# =============================================================================
+# Square
+# =============================================================================
+
+SQUARE_ACCESS_TOKEN:
+  provider: "Square"
+  blast_radius: "Access to Square APIs for payments, customers, inventory, and catalog. Can process transactions, issue refunds, and access customer data."
+  steps:
+    - "Go to Square Developer Dashboard -> Application -> OAuth"
+    - "Revoke the compromised access token"
+    - "Generate a new access token through OAuth flow"
+    - "Update the token in your application"
+    - "Review transaction history for unauthorized activity"
+  console_url: "https://developer.squareup.com/apps"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use Square's OAuth flow with short-lived access tokens and refresh tokens"
+  references:
+    - "https://developer.squareup.com/docs/oauth-api/revoke-and-renew-tokens"
+
+SQUARE_OAUTH_SECRET:
+  provider: "Square"
+  blast_radius: "Can be used to exchange authorization codes for access tokens. Combined with the application ID, allows initiating OAuth flows."
+  steps:
+    - "Go to Square Developer Dashboard -> Application -> OAuth"
+    - "Rotate the OAuth application secret"
+    - "Update the secret in your application"
+    - "Review authorized integrations for suspicious OAuth grants"
+  console_url: "https://developer.squareup.com/apps"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Store the OAuth secret in a secrets manager. Implement PKCE for additional security."
+  references:
+    - "https://developer.squareup.com/docs/oauth-api/overview"
+
+# =============================================================================
+# Discord
+# =============================================================================
+
+DISCORD_BOT_TOKEN:
+  provider: "Discord"
+  blast_radius: "Full control of the Discord bot: can read/send messages in all channels the bot has access to, manage server members, modify channels, and ban users."
+  steps:
+    - "Go to Discord Developer Portal -> Applications -> select the bot"
+    - "Click 'Bot' in the sidebar -> click 'Reset Token'"
+    - "Copy the new token and update your application"
+    - "Review the bot's recent activity in server audit logs"
+    - "Check for unauthorized server joins or message sends"
+  console_url: "https://discord.com/developers/applications"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Store bot tokens in a secrets manager. Use Discord's interaction endpoint (webhooks) where possible instead of persistent bot connections."
+  references:
+    - "https://discord.com/developers/docs/getting-started"
+
+DISCORD_WEBHOOK:
+  provider: "Discord"
+  blast_radius: "Can post messages, embeds, and files to a specific Discord channel. Can be used for spam or phishing within the server."
+  steps:
+    - "Go to the Discord channel's settings -> Integrations -> Webhooks"
+    - "Delete the compromised webhook"
+    - "Create a new webhook with the same name and avatar"
+    - "Update the URL in your application"
+  console_url: null
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use Discord bot interactions instead of webhooks for programmatic messaging. Store webhook URLs in a secrets manager."
+  references:
+    - "https://discord.com/developers/docs/resources/webhook"
+
+# =============================================================================
+# Heroku
+# =============================================================================
+
+HEROKU_API_KEY:
+  provider: "Heroku"
+  blast_radius: "Full access to the Heroku account: can deploy apps, access config vars (which may contain other secrets), manage addons, and access databases."
+  steps:
+    - "Go to Heroku Dashboard -> Account Settings -> API Key"
+    - "Click 'Regenerate API Key'"
+    - "Update the key in your CI/CD pipelines and Heroku CLI"
+    - "Review app activity logs for unauthorized deployments or config changes"
+    - "Check if config vars on any apps were accessed (they may contain other secrets)"
+  console_url: "https://dashboard.heroku.com/account"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use Heroku OAuth tokens with limited scopes instead of the account API key"
+  references:
+    - "https://devcenter.heroku.com/articles/authentication"
+
+# =============================================================================
+# JWT
+# =============================================================================
+
+JWT_TOKEN:
+  provider: "Generic (JSON Web Token)"
+  blast_radius: "Depends on the JWT contents and the accepting service. May grant authenticated access, impersonate users, or escalate privileges if the token has admin claims."
+  steps:
+    - "Decode the JWT at jwt.io to identify the issuer and claims (DO NOT paste tokens with sensitive data on public sites)"
+    - "Identify the issuing service from the 'iss' claim"
+    - "Rotate the JWT signing key/secret on the issuing service"
+    - "Invalidate all existing tokens (this will force all users to re-authenticate)"
+    - "If the JWT has a specific user, consider revoking that user's sessions"
+    - "Implement token expiry (short-lived) and refresh token rotation"
+  console_url: null
+  estimated_minutes: 15
+  auto_revocable: false
+  vault_alternative: "Use short-lived JWTs (5-15 minutes) with refresh token rotation. Store signing keys in a secrets manager."
+  references:
+    - "https://datatracker.ietf.org/doc/html/rfc7519"
+
+# =============================================================================
+# Azure
+# =============================================================================
+
+AZURE_STORAGE_KEY:
+  provider: "Microsoft Azure"
+  blast_radius: "Full read/write/delete access to all containers and blobs in the Azure Storage account. Can also manage queues and tables."
+  steps:
+    - "Go to Azure Portal -> Storage account -> Security + networking -> Access keys"
+    - "Click 'Rotate key' for the compromised key (key1 or key2)"
+    - "Update the key in your application and connection strings"
+    - "Review Storage Analytics logs for unauthorized access"
+    - "Consider using Azure AD authentication instead of shared keys"
+  console_url: "https://portal.azure.com/#view/HubsExtension/BrowseResource/resourceType/Microsoft.Storage%2FStorageAccounts"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use Azure AD with RBAC for storage access instead of shared keys. Enable key auto-rotation in Azure Key Vault."
+  references:
+    - "https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage"
+
+AZURE_CONNECTION_STRING:
+  provider: "Microsoft Azure"
+  blast_radius: "Full access to the Azure Storage account via the embedded account key. Same blast radius as the storage key itself."
+  steps:
+    - "Go to Azure Portal -> Storage account -> Security + networking -> Access keys"
+    - "Rotate the key embedded in the connection string"
+    - "Regenerate connection strings with the new key"
+    - "Update all applications using this connection string"
+    - "Review Storage Analytics logs for unauthorized operations"
+  console_url: "https://portal.azure.com/#view/HubsExtension/BrowseResource/resourceType/Microsoft.Storage%2FStorageAccounts"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use Azure AD authentication with managed identities instead of connection strings with embedded keys"
+  references:
+    - "https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string"
+
+AZURE_SAS_TOKEN:
+  provider: "Microsoft Azure"
+  blast_radius: "Scoped access to Azure Storage resources. Blast radius depends on SAS parameters: can range from a single blob to entire account. Check 'sp' (permissions) and 'sr' (resource) parameters."
+  steps:
+    - "If service SAS: rotate the storage account key that signed it to invalidate all SAS tokens from that key"
+    - "If account SAS: rotate the account key used to sign it"
+    - "If user delegation SAS: revoke the user's Azure AD credentials"
+    - "Generate new SAS tokens with appropriate constraints (IP restrictions, expiry, permissions)"
+    - "Review storage logs for access from unexpected IPs"
+  console_url: "https://portal.azure.com/#view/HubsExtension/BrowseResource/resourceType/Microsoft.Storage%2FStorageAccounts"
+  estimated_minutes: 15
+  auto_revocable: false
+  vault_alternative: "Use user delegation SAS tokens (Azure AD-based) with short expiry. Implement a stored access policy for easy revocation."
+  references:
+    - "https://learn.microsoft.com/en-us/azure/storage/common/storage-sas-overview"
+
+AZURE_CLIENT_SECRET:
+  provider: "Microsoft Azure"
+  blast_radius: "Azure AD application secret. Can authenticate as the service principal and access all resources granted to the app registration (APIs, databases, storage, etc.)."
+  steps:
+    - "Go to Azure Portal -> Azure Active Directory -> App registrations -> select the app"
+    - "Click 'Certificates & secrets' -> delete the compromised secret"
+    - "Create a new client secret with an appropriate expiry"
+    - "Update the secret in your application"
+    - "Review Azure AD sign-in logs for the service principal"
+    - "Audit the app's API permissions and reduce if possible"
+  console_url: "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use managed identities instead of client secrets for Azure-hosted workloads. Use certificate-based authentication for external apps."
+  references:
+    - "https://learn.microsoft.com/en-us/azure/active-directory/develop/howto-create-service-principal-portal"
+
+# =============================================================================
+# DigitalOcean
+# =============================================================================
+
+DIGITALOCEAN_TOKEN:
+  provider: "DigitalOcean"
+  blast_radius: "Full API access to the DigitalOcean account: can create/destroy droplets, manage databases, access Spaces storage, and modify DNS records."
+  steps:
+    - "Go to DigitalOcean Control Panel -> API -> Personal access tokens"
+    - "Delete the compromised token"
+    - "Generate a new token with a descriptive name"
+    - "Update the token in your application"
+    - "Review droplet and resource creation logs for unauthorized activity"
+    - "Check billing for unexpected resource usage"
+  console_url: "https://cloud.digitalocean.com/account/api/tokens"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use scoped tokens when possible. Store tokens in a secrets manager with rotation."
+  references:
+    - "https://docs.digitalocean.com/reference/api/create-personal-access-token/"
+
+DIGITALOCEAN_OAUTH:
+  provider: "DigitalOcean"
+  blast_radius: "OAuth token grants access based on authorized scopes. Can manage DigitalOcean resources as the authorizing user."
+  steps:
+    - "Go to DigitalOcean Control Panel -> API -> Applications & API"
+    - "Revoke the OAuth application's access"
+    - "Regenerate OAuth credentials if you own the application"
+    - "Update tokens in your application"
+  console_url: "https://cloud.digitalocean.com/account/api/tokens"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use personal access tokens with minimum required permissions instead of OAuth tokens"
+  references:
+    - "https://docs.digitalocean.com/reference/api/oauth-api/"
+
+DIGITALOCEAN_REFRESH:
+  provider: "DigitalOcean"
+  blast_radius: "Can generate new access tokens, maintaining persistent access to DigitalOcean resources."
+  steps:
+    - "Revoke the OAuth application authorization to invalidate all tokens"
+    - "Re-authorize the application to generate fresh tokens"
+    - "Update tokens in your application"
+  console_url: "https://cloud.digitalocean.com/account/api/tokens"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use short-lived tokens and store refresh tokens encrypted in a secrets manager"
+  references:
+    - "https://docs.digitalocean.com/reference/api/oauth-api/"
+
+# =============================================================================
+# Datadog
+# =============================================================================
+
+DATADOG_API_KEY:
+  provider: "Datadog"
+  blast_radius: "Can submit metrics, events, and logs to your Datadog account. Can be used to inject false monitoring data or flood your account with garbage data."
+  steps:
+    - "Go to Datadog -> Organization Settings -> API Keys"
+    - "Revoke the compromised API key"
+    - "Create a new API key"
+    - "Update the key in your agents, applications, and integrations"
+    - "Review submitted data for any anomalies during the exposure window"
+  console_url: "https://app.datadoghq.com/organization-settings/api-keys"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use Datadog's secrets backend integration with a vault provider for automatic key rotation"
+  references:
+    - "https://docs.datadoghq.com/account_management/api-app-keys/"
+
+DATADOG_APP_KEY:
+  provider: "Datadog"
+  blast_radius: "Combined with an API key, grants read access to Datadog data: dashboards, monitors, logs, APM data. Can modify monitors and dashboards."
+  steps:
+    - "Go to Datadog -> Organization Settings -> Application Keys"
+    - "Revoke the compromised application key"
+    - "Create a new application key"
+    - "Update the key in your applications"
+    - "Review audit trail for unauthorized API calls"
+  console_url: "https://app.datadoghq.com/organization-settings/application-keys"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use service accounts with scoped application keys instead of personal application keys"
+  references:
+    - "https://docs.datadoghq.com/account_management/api-app-keys/"
+
+# =============================================================================
+# Mailchimp / Mailgun
+# =============================================================================
+
+MAILCHIMP_API_KEY:
+  provider: "Mailchimp"
+  blast_radius: "Full access to Mailchimp account: can manage audiences (contact lists), send campaigns, access subscriber PII, and modify account settings."
+  steps:
+    - "Go to Mailchimp -> Account -> Extras -> API keys"
+    - "Disable the compromised API key"
+    - "Generate a new API key"
+    - "Update the key in your application"
+    - "Review recent campaign sends and audience changes for unauthorized activity"
+    - "Check if subscriber data was exported"
+  console_url: "https://us1.admin.mailchimp.com/account/api/"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use Mailchimp OAuth for integrations. Store API keys in a secrets manager."
+  references:
+    - "https://mailchimp.com/developer/marketing/guides/quick-start/#generate-your-api-key"
+
+MAILGUN_API_KEY:
+  provider: "Mailgun"
+  blast_radius: "Can send emails from your domains, access email logs, manage routes, and read stored messages. Can be used for phishing from your legitimate domain."
+  steps:
+    - "Go to Mailgun Dashboard -> Settings -> API Security"
+    - "Reset the API key"
+    - "Update the key in your application"
+    - "Review email logs for unauthorized sends"
+    - "Check domain settings for unauthorized route changes"
+  console_url: "https://app.mailgun.com/settings/api_security"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use domain-scoped sending keys instead of the master API key. Store in a secrets manager."
+  references:
+    - "https://documentation.mailgun.com/docs/mailgun/api-reference/authentication/"
+
+# =============================================================================
+# Cloudflare
+# =============================================================================
+
+CLOUDFLARE_API_KEY:
+  provider: "Cloudflare"
+  blast_radius: "Global API key grants full access to all Cloudflare zones and account settings: DNS records, firewall rules, SSL certificates, Workers, and caching configuration."
+  steps:
+    - "Go to Cloudflare Dashboard -> My Profile -> API Tokens -> Global API Key"
+    - "Click 'Change' to regenerate the Global API Key"
+    - "Update the key in all applications and CI/CD pipelines"
+    - "Review audit log for unauthorized DNS or configuration changes"
+    - "Consider migrating to API Tokens with scoped permissions"
+  console_url: "https://dash.cloudflare.com/profile/api-tokens"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use Cloudflare API Tokens with minimum required permissions per zone instead of the Global API Key"
+  references:
+    - "https://developers.cloudflare.com/fundamentals/api/get-started/keys/"
+
+CLOUDFLARE_API_TOKEN:
+  provider: "Cloudflare"
+  blast_radius: "Scoped to specific Cloudflare zones and permissions. Blast radius depends on the token's permission set — can range from read-only DNS to full zone management."
+  steps:
+    - "Go to Cloudflare Dashboard -> My Profile -> API Tokens"
+    - "Find the compromised token and click 'Roll' or 'Delete'"
+    - "Create a new token with the same permission set"
+    - "Update the token in your application"
+    - "Review the token's usage in Cloudflare audit logs"
+  console_url: "https://dash.cloudflare.com/profile/api-tokens"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use short-lived API tokens with minimum permissions. Rotate tokens regularly."
+  references:
+    - "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/"
+
+# =============================================================================
+# Firebase
+# =============================================================================
+
+FIREBASE_API_KEY:
+  provider: "Google Firebase"
+  blast_radius: "Firebase API keys are generally meant to be public (identify the project), but can be abused to access unsecured Firestore/Realtime Database, call Cloud Functions, or abuse Firebase Auth if security rules are weak."
+  steps:
+    - "Go to Firebase Console -> Project Settings -> General"
+    - "Review security rules for Firestore, Realtime Database, and Storage"
+    - "If rules are permissive, tighten them immediately"
+    - "Go to Google Cloud Console -> APIs & Services -> Credentials"
+    - "Add API key restrictions (HTTP referrers, API scopes)"
+    - "Enable App Check to verify requests come from your legitimate app"
+  console_url: "https://console.firebase.google.com/"
+  estimated_minutes: 15
+  auto_revocable: false
+  vault_alternative: "Firebase API keys are designed to be client-side. Focus on strong security rules and App Check instead of key rotation."
+  references:
+    - "https://firebase.google.com/docs/projects/api-keys"
+
+FIREBASE_URL:
+  provider: "Google Firebase"
+  blast_radius: "Exposes the Firebase Realtime Database URL. If database security rules allow unauthenticated access, anyone can read/write data."
+  steps:
+    - "Go to Firebase Console -> Realtime Database -> Rules"
+    - "Ensure rules are NOT set to public read/write"
+    - "Implement proper authentication-based security rules"
+    - "Review database contents for unauthorized modifications"
+    - "Enable Firebase App Check"
+  console_url: "https://console.firebase.google.com/"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "The URL itself is not a secret. Focus on database security rules and authentication. Use Firestore with IAM for server-side access."
+  references:
+    - "https://firebase.google.com/docs/database/security"
+
+# =============================================================================
+# AI Services
+# =============================================================================
+
+OPENAI_API_KEY:
+  provider: "OpenAI"
+  blast_radius: "Can make API calls to GPT, DALL-E, Whisper, and other OpenAI models. Can incur significant costs and access fine-tuned models with proprietary training data."
+  steps:
+    - "Go to OpenAI Platform -> API keys"
+    - "Delete the compromised API key"
+    - "Create a new API key with a descriptive name"
+    - "Update the key in your application"
+    - "Review usage dashboard for unexpected API consumption"
+    - "Set usage limits to prevent billing abuse"
+  console_url: "https://platform.openai.com/api-keys"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use project-scoped API keys. Set spending limits. Store keys in a secrets manager with rotation."
+  references:
+    - "https://platform.openai.com/docs/api-reference/authentication"
+
+ANTHROPIC_API_KEY:
+  provider: "Anthropic"
+  blast_radius: "Can make API calls to Claude models. Can incur costs and potentially access organization-specific configurations."
+  steps:
+    - "Go to Anthropic Console -> API Keys"
+    - "Delete the compromised API key"
+    - "Create a new API key"
+    - "Update the key in your application"
+    - "Review usage logs for unauthorized API consumption"
+    - "Set spending limits on your account"
+  console_url: "https://console.anthropic.com/settings/keys"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use workspace-scoped API keys. Set rate limits and spending caps. Store in a secrets manager."
+  references:
+    - "https://docs.anthropic.com/en/api/getting-started"
+
+# =============================================================================
+# HashiCorp Vault
+# =============================================================================
+
+VAULT_TOKEN:
+  provider: "HashiCorp Vault"
+  blast_radius: "CRITICAL: Access to secrets stored in Vault, scoped to the token's policies. A root token grants full access to all secrets, auth methods, and Vault configuration."
+  steps:
+    - "Revoke the token immediately: vault token revoke <token>"
+    - "If root token: vault token revoke -self (from the compromised token) or revoke via another root/admin token"
+    - "Review Vault audit logs for unauthorized secret access"
+    - "Rotate any secrets that may have been read with the compromised token"
+    - "Generate a new token with appropriate policies: vault token create -policy=my-policy"
+    - "Review and tighten token TTLs and policies"
+  console_url: null
+  estimated_minutes: 10
+  auto_revocable: true
+  vault_alternative: "Use short-lived tokens with auto-renewal. Implement AppRole or Kubernetes auth for machine-to-machine access instead of long-lived tokens."
+  references:
+    - "https://developer.hashicorp.com/vault/docs/concepts/tokens"
+
+VAULT_SERVICE_TOKEN:
+  provider: "HashiCorp Vault"
+  blast_radius: "Batch token for Vault. Same risk as regular tokens but cannot be renewed or revoked individually (they expire with TTL). Check the token's policies for scope."
+  steps:
+    - "Batch tokens cannot be revoked individually — they expire at their TTL"
+    - "Rotate the secrets the batch token could access"
+    - "If the TTL is long, consider rotating the auth backend credentials that generated it"
+    - "Review Vault audit logs for access during the exposure window"
+    - "Reduce batch token TTLs going forward"
+  console_url: null
+  estimated_minutes: 15
+  auto_revocable: false
+  vault_alternative: "Use service tokens instead of batch tokens when revocation capability is needed. Set short TTLs."
+  references:
+    - "https://developer.hashicorp.com/vault/docs/concepts/tokens#batch-tokens"
+
+# =============================================================================
+# Atlassian
+# =============================================================================
+
+ATLASSIAN_API_TOKEN:
+  provider: "Atlassian (Jira / Confluence)"
+  blast_radius: "Access to Jira, Confluence, and other Atlassian products as the token owner. Can read/write issues, wiki pages, access project data, and manage configurations."
+  steps:
+    - "Go to Atlassian Account -> Security -> API tokens"
+    - "Revoke the compromised token"
+    - "Create a new API token"
+    - "Update the token in your integrations"
+    - "Review Atlassian audit logs for unauthorized access"
+    - "Check for unauthorized issue/page changes"
+  console_url: "https://id.atlassian.com/manage-profile/security/api-tokens"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use OAuth 2.0 for Atlassian integrations. Store tokens in a secrets manager."
+  references:
+    - "https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/"
+
+# =============================================================================
+# Linear / Notion / Airtable
+# =============================================================================
+
+LINEAR_API_KEY:
+  provider: "Linear"
+  blast_radius: "Full access to the Linear workspace: can read/write issues, projects, teams, and cycles. Can access all project management data."
+  steps:
+    - "Go to Linear -> Settings -> API -> Personal API keys"
+    - "Delete the compromised key"
+    - "Create a new API key"
+    - "Update the key in your integrations"
+    - "Review recent issue/project changes for unauthorized modifications"
+  console_url: "https://linear.app/settings/api"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use Linear OAuth apps with scoped permissions for integrations. Store keys in a secrets manager."
+  references:
+    - "https://developers.linear.app/docs/graphql/working-with-the-graphql-api"
+
+NOTION_TOKEN:
+  provider: "Notion"
+  blast_radius: "Access to Notion pages and databases shared with the integration. Can read, create, update, and delete content depending on the integration's capabilities."
+  steps:
+    - "Go to Notion -> Settings & members -> My connections (or Integrations)"
+    - "Find the affected integration and regenerate its token"
+    - "Update the token in your application"
+    - "Review recent page edits for unauthorized changes"
+    - "Audit which pages are shared with the integration and reduce if needed"
+  console_url: "https://www.notion.so/my-integrations"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use Notion's OAuth flow for user-facing integrations. Limit integration access to specific pages."
+  references:
+    - "https://developers.notion.com/docs/authorization"
+
+AIRTABLE_API_KEY:
+  provider: "Airtable"
+  blast_radius: "Access to all Airtable bases the account can reach. Can read, create, update, and delete records. May contain business-critical data."
+  steps:
+    - "Go to Airtable -> Account -> API"
+    - "Regenerate the API key (or migrate to personal access tokens)"
+    - "Update the key in your integrations"
+    - "Review base activity for unauthorized record changes"
+    - "Migrate to Airtable personal access tokens with scoped permissions"
+  console_url: "https://airtable.com/account"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use Airtable personal access tokens with base-scoped permissions instead of the legacy API key"
+  references:
+    - "https://airtable.com/developers/web/guides/personal-access-tokens"
+
+# =============================================================================
+# Supabase
+# =============================================================================
+
+SUPABASE_KEY:
+  provider: "Supabase"
+  blast_radius: "Service role key bypasses Row Level Security. Grants full read/write/delete access to all tables, storage, and auth APIs. CRITICAL for any Supabase project."
+  steps:
+    - "Go to Supabase Dashboard -> Project Settings -> API"
+    - "Click 'Generate new keys' to rotate the service role key"
+    - "Update the key in your server-side application (never expose in client code)"
+    - "Review database logs for unauthorized queries"
+    - "Verify Row Level Security is enabled on all tables"
+    - "Ensure the anon key (not the service key) is used in client-side code"
+  console_url: "https://supabase.com/dashboard/project/_/settings/api"
+  estimated_minutes: 10
+  auto_revocable: false
+  vault_alternative: "Use the anon key for client-side. Use the service key only on trusted servers. Store in a secrets manager."
+  references:
+    - "https://supabase.com/docs/guides/api/api-keys"
+
+# =============================================================================
+# Doppler
+# =============================================================================
+
+DOPPLER_TOKEN:
+  provider: "Doppler"
+  blast_radius: "Personal token grants CLI access to all Doppler projects and environments the user can access. Can read all secrets managed by Doppler."
+  steps:
+    - "Go to Doppler Dashboard -> Access -> Tokens"
+    - "Revoke the compromised personal token"
+    - "Generate a new token: doppler login"
+    - "Update any scripts using the old token"
+    - "Review Doppler audit logs for unauthorized access"
+  console_url: "https://dashboard.doppler.com/workplace/tokens"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use service tokens scoped to specific projects/environments instead of personal tokens"
+  references:
+    - "https://docs.doppler.com/docs/api#auth-token-types"
+
+DOPPLER_SERVICE_TOKEN:
+  provider: "Doppler"
+  blast_radius: "Scoped to a specific Doppler project and environment. Can read all secrets in that config, which may include database passwords, API keys, and other credentials."
+  steps:
+    - "Go to Doppler Dashboard -> Project -> environment config -> Service Tokens"
+    - "Revoke the compromised service token"
+    - "Generate a new service token for the same config"
+    - "Update the token in your application deployment"
+    - "Consider rotating the secrets that were accessible via this token"
+  console_url: "https://dashboard.doppler.com"
+  estimated_minutes: 5
+  auto_revocable: false
+  vault_alternative: "Use short-lived service tokens. Enable Doppler's automatic token rotation if available."
+  references:
+    - "https://docs.doppler.com/docs/service-tokens"
