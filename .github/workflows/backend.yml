@@ -25,10 +25,9 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Install linting tools
-        run: pip install ruff
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Lint
         run: ruff check .
