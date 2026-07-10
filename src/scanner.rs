@@ -256,9 +256,11 @@ impl Scanner {
                 let line_number = text[..mat.start()].matches('\n').count() + 1;
                 let matched_text = mat.as_str();
 
-                // Redact the actual secret
-                let redacted = if matched_text.len() > 12 {
-                    format!("{}...[REDACTED]", &matched_text[..12])
+                // Redact the actual secret. Truncate by characters, not bytes,
+                // so multi-byte UTF-8 matches never panic on a slice boundary.
+                let redacted = if matched_text.chars().count() > 12 {
+                    let prefix: String = matched_text.chars().take(12).collect();
+                    format!("{}...[REDACTED]", prefix)
                 } else {
                     matched_text.to_string()
                 };
@@ -308,5 +310,95 @@ impl Scanner {
     /// Get statistics about the scanner
     pub fn stats(&self) -> (usize, usize) {
         (self.rules.len(), self.keywords.len())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::config::{Config, Rule, RiskMetadata};
+
+    fn rule(id: &str, pattern: &str) -> Rule {
+        Rule {
+            id: id.to_string(),
+            pattern: pattern.to_string(),
+            description: None,
+            risk: RiskMetadata::default(),
+        }
+    }
+
+    #[test]
+    fn scan_detects_aws_access_key() {
+        let scanner = Scanner::new(vec![rule("aws-access-key", r"AKIA[0-9A-Z]{16}")]);
+        let vulns = scanner.scan(b"AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n", "creds.env");
+        assert_eq!(vulns.len(), 1);
+        assert_eq!(vulns[0].rule_id, "aws-access-key");
+        assert_eq!(vulns[0].line, 1);
+    }
+
+    #[test]
+    fn scan_reports_no_false_positive_on_clean_text() {
+        let scanner = Scanner::new(vec![rule("aws-access-key", r"AKIA[0-9A-Z]{16}")]);
+        let vulns = scanner.scan(b"just some ordinary configuration text\n", "app.conf");
+        assert!(vulns.is_empty());
+    }
+
+    #[test]
+    fn scan_reports_correct_line_number() {
+        let scanner = Scanner::new(vec![rule("slack-bot", r"xoxb-[0-9A-Za-z-]+")]);
+        let content = b"line one\nline two\nSLACK=xoxb-123456789012-abcdef\n";
+        let vulns = scanner.scan(content, "cfg");
+        assert_eq!(vulns.len(), 1);
+        assert_eq!(vulns[0].line, 3);
+    }
+
+    #[test]
+    fn long_secret_is_redacted_with_twelve_char_prefix() {
+        let scanner = Scanner::new(vec![rule("github-pat", r"ghp_[0-9A-Za-z]{36}")]);
+        let secret = "ghp_1234567890abcdefghijABCDEFGHIJ012345";
+        let vulns = scanner.scan(format!("token={secret}").as_bytes(), "cfg");
+        assert_eq!(vulns.len(), 1);
+        assert!(vulns[0].match_content.ends_with("...[REDACTED]"));
+        // Redaction keeps exactly the first 12 characters of the match.
+        assert!(vulns[0].match_content.starts_with(&secret[..12]));
+    }
+
+    #[test]
+    fn multibyte_match_redaction_does_not_panic() {
+        // Regression: byte-slicing the first 12 bytes could land mid-codepoint
+        // and panic. Redaction now truncates by characters.
+        let scanner = Scanner::new(vec![rule("generic-key", r"KEY=\S+")]);
+        let vulns = scanner.scan("KEY=café_münchen_schlüssel_secret".as_bytes(), "cfg");
+        assert_eq!(vulns.len(), 1);
+        assert!(vulns[0].match_content.contains("...[REDACTED]"));
+    }
+
+    #[test]
+    fn fingerprint_is_deterministic_and_quote_insensitive() {
+        let scanner = Scanner::new(vec![rule("slack-bot", r#"xoxb-[0-9A-Za-z-]+"#)]);
+        let bare = &scanner.scan(b"t=xoxb-1-abc", "a")[0];
+        // Same secret, wrapped in quotes/whitespace, must normalize to the same fingerprint.
+        let quoted = Vulnerability {
+            raw_secret: "  \"xoxb-1-abc\"  ".to_string(),
+            ..bare.clone()
+        };
+        assert_eq!(bare.generate_fingerprint(), quoted.generate_fingerprint());
+    }
+
+    #[test]
+    fn extract_keyword_uses_known_prefix() {
+        assert_eq!(Scanner::extract_keyword(r"AKIA[0-9A-Z]{16}"), "AKIA");
+        assert_eq!(Scanner::extract_keyword(r"ghp_[0-9A-Za-z]{36}"), "ghp_");
+    }
+
+    #[test]
+    fn embedded_default_rules_all_compile() {
+        let cfg = Config::default_rules();
+        assert!(cfg.rules.len() >= 60, "expected the full embedded ruleset");
+        let scanner = Scanner::new(cfg.rules);
+        let (compiled, keywords) = scanner.stats();
+        // Every rule must compile to a regex and contribute a keyword.
+        assert_eq!(compiled, keywords);
+        assert!(compiled >= 60);
     }
 }
