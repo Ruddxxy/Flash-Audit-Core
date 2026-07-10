@@ -16,7 +16,7 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from passlib.hash import bcrypt
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +28,6 @@ from dependencies.auth import (
     destroy_session,
     hash_session_token,
     SESSION_COOKIE_NAME,
-    require_role,
 )
 from models import (
     User,
@@ -45,8 +44,8 @@ logger = logging.getLogger("flashaudit.auth")
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
 
-from services.rate_limiter import login_rate_limiter
-from services.audit import log_action
+from services.rate_limiter import login_rate_limiter  # noqa: E402  (late import avoids circular dependency)
+from services.audit import log_action  # noqa: E402
 
 
 async def _check_login_rate_limit(ip: str) -> None:
@@ -77,9 +76,7 @@ async def login(
     await _check_login_rate_limit(client_ip)
 
     result = await db.execute(
-        select(User)
-        .where(User.email == body.email)
-        .where(User.is_active == True)  # noqa: E712
+        select(User).where(User.email == body.email).where(User.is_active == True)  # noqa: E712
     )
     user = result.scalar_one_or_none()
 
@@ -94,7 +91,10 @@ async def login(
     token, expires_at = await create_session(db, user.id)
 
     await log_action(
-        db, org_id=user.org_id, action="login", user_id=user.id,
+        db,
+        org_id=user.org_id,
+        action="login",
+        user_id=user.id,
         ip_address=client_ip,
     )
     await db.commit()
@@ -112,7 +112,10 @@ async def login(
 
     logger.info(f"User logged in: {user.email}")
 
-    return {"message": "Login successful", "user": UserResponse.model_validate(user).model_dump()}
+    return {
+        "message": "Login successful",
+        "user": UserResponse.model_validate(user).model_dump(),
+    }
 
 
 @router.post("/logout", summary="Logout and clear session")
@@ -167,7 +170,9 @@ async def register(
         sess = sess_result.scalar_one_or_none()
         if sess:
             user_result = await db.execute(
-                select(User).where(User.id == sess.user_id).where(User.is_active == True)  # noqa: E712
+                select(User)
+                .where(User.id == sess.user_id)
+                .where(User.is_active == True)  # noqa: E712
             )
             current_user = user_result.scalar_one_or_none()
 
@@ -188,9 +193,7 @@ async def register(
                 detail="Only admins can register new users",
             )
 
-    existing = await db.execute(
-        select(User).where(User.email == body.email)
-    )
+    existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

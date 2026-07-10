@@ -8,7 +8,7 @@ preventing accidental storage of raw secret content.
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Optional
+from typing import Optional
 import re
 
 from pydantic import BaseModel, Field, field_validator, ConfigDict

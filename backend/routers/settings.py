@@ -8,7 +8,7 @@ Security:
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from passlib.hash import bcrypt
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +29,6 @@ from models import (
     PolicyResponse,
     UserResponse,
     RegisterRequest,
-    ErrorResponse,
 )
 
 logger = logging.getLogger("flashaudit.settings")

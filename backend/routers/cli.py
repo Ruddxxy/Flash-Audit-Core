@@ -30,7 +30,6 @@ from models import (
     StateResponse,
     EventResponse,
     ErrorResponse,
-    HealthResponse,
 )
 
 logger = logging.getLogger("flashaudit.cli")
@@ -42,13 +41,18 @@ router = APIRouter(tags=["CLI"])
 # Authentication (API Key — unchanged)
 # =============================================================================
 
+
 def hash_api_key(api_key: str) -> str:
     return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
 
 async def verify_api_key(
-    x_api_key: Annotated[str | None, Header(description="API Key for authentication")] = None,
-    authorization: Annotated[str | None, Header(description="Bearer token authentication")] = None,
+    x_api_key: Annotated[
+        str | None, Header(description="API Key for authentication")
+    ] = None,
+    authorization: Annotated[
+        str | None, Header(description="Bearer token authentication")
+    ] = None,
     session: AsyncSession = Depends(get_session),
 ) -> Organization:
     api_key: Optional[str] = None
@@ -95,7 +99,7 @@ async def verify_api_key(
 # Rate Limiting (In-Memory — unchanged)
 # =============================================================================
 
-from services.rate_limiter import cli_rate_limiter
+from services.rate_limiter import cli_rate_limiter  # noqa: E402  (late import avoids circular dependency)
 
 
 async def check_rate_limit(
@@ -120,6 +124,7 @@ async def check_rate_limit(
 # Endpoints
 # =============================================================================
 
+
 @router.get(
     "/api/v1/state",
     response_model=StateResponse,
@@ -131,12 +136,15 @@ async def check_rate_limit(
     summary="Get active secret hashes for a repository",
 )
 async def get_state(
-    repo: Annotated[str, Query(
-        description="Repository in format 'org/repo'",
-        min_length=3,
-        max_length=256,
-        pattern=r"^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$"
-    )],
+    repo: Annotated[
+        str,
+        Query(
+            description="Repository in format 'org/repo'",
+            min_length=3,
+            max_length=256,
+            pattern=r"^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$",
+        ),
+    ],
     org: Organization = Depends(check_rate_limit),
     session: AsyncSession = Depends(get_session),
 ):
@@ -151,7 +159,9 @@ async def get_state(
 
     hashes = [row[0] for row in result.fetchall()]
 
-    logger.info(f"State query: org={org.name}, repo={repo_name}, active_hashes={len(hashes)}")
+    logger.info(
+        f"State query: org={org.name}, repo={repo_name}, active_hashes={len(hashes)}"
+    )
 
     return StateResponse(active_hashes=hashes)
 
@@ -191,12 +201,15 @@ async def post_events(
                 else:
                     updated_count += 1
             elif event.event_type == EventType.REMOVED:
-                was_fixed = await _mark_finding_fixed(session, repository.id, event.secret_hash)
+                was_fixed = await _mark_finding_fixed(
+                    session, repository.id, event.secret_hash
+                )
                 if was_fixed:
                     fixed_count += 1
 
     # Evaluate policies against new/updated findings
     from services.policies import evaluate_policies
+
     all_violations: list[dict] = []
     for finding in upserted_findings:
         violations = await evaluate_policies(session, org.id, finding)
@@ -211,16 +224,25 @@ async def post_events(
 
     # Fire-and-forget webhook delivery (non-blocking)
     from services.webhooks import dispatch_webhooks
+
     if new_count > 0:
-        asyncio.create_task(dispatch_webhooks(
-            session, org.id, "new_finding",
-            {"repo": repo_name, "new_findings": new_count},
-        ))
+        asyncio.create_task(
+            dispatch_webhooks(
+                session,
+                org.id,
+                "new_finding",
+                {"repo": repo_name, "new_findings": new_count},
+            )
+        )
     if fixed_count > 0:
-        asyncio.create_task(dispatch_webhooks(
-            session, org.id, "finding_fixed",
-            {"repo": repo_name, "fixed_findings": fixed_count},
-        ))
+        asyncio.create_task(
+            dispatch_webhooks(
+                session,
+                org.id,
+                "finding_fixed",
+                {"repo": repo_name, "fixed_findings": fixed_count},
+            )
+        )
 
     return EventResponse(
         processed=len(batch.events),
@@ -234,6 +256,7 @@ async def post_events(
 # =============================================================================
 # Admin
 # =============================================================================
+
 
 @router.post(
     "/api/v1/admin/organizations",
@@ -331,6 +354,7 @@ async def rotate_api_key(
 # DB Helpers
 # =============================================================================
 
+
 async def _get_or_create_repo(
     session: AsyncSession,
     org_id: int,
@@ -373,17 +397,25 @@ async def _upsert_finding(
         existing.fixed_at = None
 
         # Record metadata changes before overwriting
-        for field in ("rule_id", "file_path", "line_number", "risk_class", "risk_impact"):
+        for field in (
+            "rule_id",
+            "file_path",
+            "line_number",
+            "risk_class",
+            "risk_impact",
+        ):
             new_val = getattr(event, field)
             if new_val is not None:
                 old_val = getattr(existing, field)
                 if str(old_val) != str(new_val) and old_val is not None:
-                    session.add(FindingHistory(
-                        finding_id=existing.id,
-                        field_name=field,
-                        old_value=str(old_val),
-                        new_value=str(new_val),
-                    ))
+                    session.add(
+                        FindingHistory(
+                            finding_id=existing.id,
+                            field_name=field,
+                            old_value=str(old_val),
+                            new_value=str(new_val),
+                        )
+                    )
                 setattr(existing, field, new_val)
 
         return False, existing

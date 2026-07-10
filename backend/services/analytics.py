@@ -7,7 +7,7 @@ All queries scoped to org_id for tenant isolation.
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import select, func, case, and_, extract
+from sqlalchemy import select, func, and_, extract
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import (

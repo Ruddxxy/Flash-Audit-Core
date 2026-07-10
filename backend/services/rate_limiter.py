@@ -9,7 +9,6 @@ Uses a sliding window algorithm:
 import logging
 import os
 import time
-from typing import Optional
 
 logger = logging.getLogger("flashaudit.rate_limiter")
 
