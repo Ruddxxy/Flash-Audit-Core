@@ -28,8 +28,11 @@ test_engine = create_async_engine(
     poolclass=StaticPool,
 )
 TestSessionLocal = async_sessionmaker(
-    test_engine, class_=AsyncSession, expire_on_commit=False,
-    autocommit=False, autoflush=False,
+    test_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
 )
 
 # Module-level reference so override_get_session can access the fixture's session
@@ -38,15 +41,32 @@ _shared_session: AsyncSession | None = None
 
 async def override_get_session():
     """Yield the same session that the test fixture holds."""
-    assert _shared_session is not None, "No shared session — did the test forget the `client` fixture?"
+    assert _shared_session is not None, (
+        "No shared session — did the test forget the `client` fixture?"
+    )
     yield _shared_session
     # No commit/rollback here; the fixture owns the session lifecycle.
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def _dispose_test_engine():
+    """Dispose the module-level engine at session end.
+
+    aiosqlite runs its connection on a NON-daemon background thread. If the
+    engine is never disposed, that thread stays blocked on its command queue and
+    `threading._shutdown()` hangs forever joining it, so the process never exits
+    even though every test has passed. Disposing closes the connection, which
+    lets the worker thread terminate.
+    """
+    yield
+    await test_engine.dispose()
 
 
 @pytest.fixture(autouse=True)
 def _reset_rate_limiters():
     """Clear all in-memory rate-limiting state between tests."""
     from services.rate_limiter import cli_rate_limiter, login_rate_limiter
+
     cli_rate_limiter.reset()
     login_rate_limiter.reset()
 
@@ -78,6 +98,7 @@ async def client(db):
     and the dependency override points to the shared session.
     """
     from main import app
+
     app.dependency_overrides[get_session] = override_get_session
 
     transport = ASGITransport(app=app)
@@ -90,6 +111,7 @@ async def client(db):
 @pytest_asyncio.fixture
 async def org(db):
     from routers.cli import hash_api_key
+
     o = Organization(
         name="test-org",
         api_key_hash=hash_api_key("test-api-key"),
@@ -119,9 +141,12 @@ async def admin_user(db, org):
 
 @pytest_asyncio.fixture
 async def auth_cookies(client, admin_user):
-    resp = await client.post("/api/v1/auth/login", json={
-        "email": "admin@test.com",
-        "password": "testpass123",
-    })
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "admin@test.com",
+            "password": "testpass123",
+        },
+    )
     assert resp.status_code == 200, f"Login failed: {resp.text}"
     return resp.cookies
