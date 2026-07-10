@@ -1,206 +1,22 @@
 # FlashAudit
 
-High-performance secrets scanner written in Rust. Enterprise-ready with SARIF output for GitHub Advanced Security.
+**A Rust secrets scanner that clears a 57k-file repository in ~1.2 seconds — an order of magnitude faster than regex-only scanners — so secret detection fits inside a pre-commit hook instead of a nightly job.**
 
-**12x faster than Gitleaks. 6x fewer false positives.**
+[![CI](https://github.com/Ruddxxy/Flash-Audit-Core/actions/workflows/audit.yml/badge.svg)](https://github.com/Ruddxxy/Flash-Audit-Core/actions/workflows/audit.yml)
+[![Backend CI](https://github.com/Ruddxxy/Flash-Audit-Core/actions/workflows/backend.yml/badge.svg)](https://github.com/Ruddxxy/Flash-Audit-Core/actions/workflows/backend.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## Features
+FlashAudit finds leaked credentials — API keys, private keys, database URLs, tokens — in source trees,
+git diffs, and staged changes. It pairs an Aho-Corasick keyword pre-filter with 66 precise regex rules so
+the expensive patterns only run on files that already contain a matching trigger. The result is fast enough
+to run on every commit, precise enough that developers don't learn to ignore it, and CI-ready via SARIF
+output for GitHub Advanced Security.
 
-- **Blazing Fast**: Hybrid Aho-Corasick + Regex engine (8-12x faster than gitleaks)
-- **Precise**: 66 specific patterns, zero generic rules = minimal false positives
-- **Enterprise Ready**: SARIF 2.1.0 output for GitHub Advanced Security
-- **Incremental**: `--git-diff` and `--staged` for CI/pre-commit hooks
-- **Stateful Risk Engine**: Track secrets across scans, detect fixed issues
-- **Non-Blocking Telemetry**: Optional event reporting with zero latency impact
-- **Smart Binary Detection**: 30+ magic byte signatures
-- **Configurable**: Load custom rules from YAML with risk metadata
-- **CI Ready**: Proper exit codes + cross-platform binaries
+## Demo
 
-## Benchmarks
-
-| Repository    | Files  | FlashAudit | Gitleaks | Speedup |
-| ------------- | ------ | ---------- | -------- | ------- |
-| Express       | 240    | **0.03s**  | 0.09s    | 3x      |
-| Django        | 7,033  | **0.51s**  | 3.93s    | 8x      |
-| Rust Compiler | 57,706 | **1.24s**  | 15.23s   | **12x** |
-
-**Precision comparison:**
-| Repository | FlashAudit | Gitleaks | Notes |
-|------------|------------|----------|-------|
-| Django | 1 real | 5 (4 FPs) | Gitleaks flags test fixtures |
-| Rust | 4 real | 24 (20 FPs) | Gitleaks duplicates same finding |
-
-## Installation
-
-### Quick Install (Recommended)
-
-**Linux / macOS:**
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/Ruddxxy/Flash-Audit/main/install.sh | bash
-```
-
-**Windows (PowerShell):**
-
-```powershell
-irm https://raw.githubusercontent.com/Ruddxxy/Flash-Audit/main/install.ps1 | iex
-```
-
-### Other Methods
-
-**Cargo (Rust):**
-
-```bash
-cargo install flash_audit
-```
-
-**Docker:**
-
-```bash
-docker run --rm -v "$(pwd):/repo" ghcr.io/ruddxxy/flash-audit:latest /repo
-```
-
-**From Source:**
-
-```bash
-git clone https://github.com/Ruddxxy/Flash-Audit.git
-cd Flash-Audit
-cargo build --release
-# Binary at: target/release/flash_audit
-```
-
-**Pre-built Binaries:**
-Download from [GitHub Releases](https://github.com/Ruddxxy/Flash-Audit/releases)
-
-## Usage
-
-```bash
-# Basic scan (JSON output)
-flash_audit /path/to/repo
-
-# SARIF output for GitHub Advanced Security
-flash_audit --format sarif /path/to/repo > results.sarif
-
-# Incremental: Only scan files changed since main
-flash_audit --git-diff main /path/to/repo
-
-# Pre-commit hook: Only scan staged files
-flash_audit --staged /path/to/repo
-
-# Custom rules
-flash_audit --rules my-rules.yaml /path/to/repo
-
-# Entropy detection
-flash_audit --entropy /path/to/repo
-
-# With telemetry and state tracking
-export FLASHAUDIT_API_KEY="your-api-key"
-flash_audit --report-to https://api.example.com/events \
-    --org my-org --repo my-repo /path/to/repo
-```
-
-## CI/CD Integration
-
-### GitHub Actions
-
-**Basic Usage:**
-
-```yaml
-- uses: Ruddxxy/Flash-Audit@v1
-```
-
-**Full Configuration:**
-
-```yaml
-name: Security Scan
-on: [push, pull_request]
-
-jobs:
-  secrets-scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: Ruddxxy/Flash-Audit@v1
-        with:
-          path: "."
-          format: "sarif"
-          upload-sarif: true
-          fail-on-finding: true
-```
-
-**PR-only Scanning:**
-
-```yaml
-- uses: Ruddxxy/Flash-Audit@v1
-  with:
-    git-diff: ${{ github.event.pull_request.base.sha }}
-```
-
-**Manual Setup (without action):**
-
-```yaml
-- uses: actions/checkout@v4
-
-- name: Run FlashAudit
-  run: |
-    curl -sSfL https://raw.githubusercontent.com/Ruddxxy/Flash-Audit/main/install.sh | bash
-    flash_audit . --format sarif > results.sarif
-  continue-on-error: true
-
-- name: Upload SARIF
-  uses: github/codeql-action/upload-sarif@v3
-  with:
-    sarif_file: results.sarif
-```
-
-### Pre-commit Hook
-
-**Using pre-commit framework:**
-
-1. Install pre-commit: `pip install pre-commit`
-
-2. Add to `.pre-commit-config.yaml`:
-
-```yaml
-repos:
-  - repo: https://github.com/Ruddxxy/Flash-Audit
-    rev: v1.0.0 # Use latest version
-    hooks:
-      - id: flashaudit
-```
-
-3. Install: `pre-commit install`
-
-**Manual git hook:**
-
-```bash
-# .git/hooks/pre-commit
-#!/bin/bash
-flash_audit --staged . || { echo "Secrets detected!"; exit 1; }
-```
-
-### Docker
-
-```bash
-# Scan current directory
-docker run --rm -v "$(pwd):/repo" ghcr.io/ruddxxy/flash-audit:latest /repo
-
-# SARIF output
-docker run --rm -v "$(pwd):/repo" ghcr.io/ruddxxy/flash-audit:latest /repo --format sarif
-
-# Scan staged files
-docker run --rm -v "$(pwd):/repo" ghcr.io/ruddxxy/flash-audit:latest /repo --staged
-
-# Custom rules
-docker run --rm -v "$(pwd):/repo" -v "$(pwd)/rules.yaml:/rules.yaml" \
-  ghcr.io/ruddxxy/flash-audit:latest /repo --rules /rules.yaml
-```
-
-## Output
-
-```
-Scanned 500 files in 0.12s. 2 errors. 3 secrets found (2 new, 1 fixed).
+```console
+$ flash_audit .
+Scanned 500 files in 0.12s. 0 errors. 3 secrets found (2 new, 1 fixed).
 [
   {
     "file": "config.env",
@@ -208,32 +24,162 @@ Scanned 500 files in 0.12s. 2 errors. 3 secrets found (2 new, 1 fixed).
     "match_content": "sk_live_...[REDACTED]",
     "rule_id": "STRIPE_LIVE_KEY",
     "description": "Stripe Live Secret Key",
-    "risk": {
-      "class": "api_key",
-      "impact": "critical"
-    }
+    "risk": { "class": "api_key", "impact": "critical" }
   }
 ]
+$ echo $?
+1        # non-zero exit => CI fails the build
 ```
 
-## CLI Options
+Secrets are always redacted in output (first 12 characters + `...[REDACTED]`); the raw value never leaves the
+process except as a salted SHA-256 fingerprint used for cross-scan deduplication.
 
-| Option                | Default  | Description                         |
-| --------------------- | -------- | ----------------------------------- |
-| `[PATH]`              | `.`      | Directory to scan                   |
-| `-f, --format`        | json     | Output format: `json` or `sarif`    |
-| `--rules`             | embedded | Path to custom rules.yaml           |
-| `--git-diff <REF>`    | -        | Only scan files changed since REF   |
-| `--staged`            | false    | Only scan staged files              |
-| `--entropy`           | false    | Enable entropy scanning             |
-| `--entropy-threshold` | 4.5      | Entropy threshold                   |
-| `--report-to <URL>`   | -        | URL to report telemetry events      |
-| `--org <ORG>`         | -        | Organization name for context       |
-| `--repo <REPO>`       | -        | Repository name for context         |
-| `--api-key <KEY>`     | env      | API key (env: `FLASHAUDIT_API_KEY`) |
-| `-v, --verbose`       | false    | Show debug output                   |
+## Performance
 
-## Exit Codes
+Wall-clock scan time, FlashAudit vs. a regex-only baseline (Gitleaks), single run each:
+
+| Repository    | Files  | FlashAudit | Gitleaks | Speedup |
+| ------------- | ------ | ---------- | -------- | ------- |
+| Express       | 240    | **0.03s**  | 0.09s    | 3×      |
+| Django        | 7,033  | **0.51s**  | 3.93s    | 8×      |
+| Rust compiler | 57,706 | **1.24s**  | 15.23s   | **12×** |
+
+The speedup grows with repository size: on small trees the fixed startup cost dominates, but on large trees
+the Aho-Corasick pre-filter skips the regex engine entirely for files with no keyword hit, which is most of
+them. Numbers are hardware- and version-dependent — reproduce them yourself:
+
+```bash
+# Requires: hyperfine, gitleaks, and a target repo checked out at ./target-repo
+cargo build --release
+hyperfine --warmup 1 \
+  './target/release/flash_audit ./target-repo' \
+  'gitleaks detect --source ./target-repo --no-git'
+```
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph CLI["flash_audit (Rust CLI)"]
+        FL[file_loader<br/>binary detection, 100MB cap, mmap] --> AC[Aho-Corasick<br/>keyword pre-filter]
+        AC -->|candidate files| RE[Regex validation<br/>66 rules]
+        RE --> ENT[entropy scan<br/>optional]
+        ENT --> OUT{output}
+        OUT --> JSON[JSON]
+        OUT --> SARIF[SARIF 2.1.0]
+        RE --> ST[state.json<br/>new / fixed diff]
+    end
+    ST -. optional .-> TEL[telemetry]
+    TEL -. HTTPS + API key .-> BE[(FastAPI backend<br/>RBAC · webhooks · analytics)]
+    BE --> DB[(Postgres)]
+    BE --> DASH[Next.js dashboard]
+    SARIF --> GHAS[GitHub Advanced Security]
+```
+
+The Rust CLI is fully self-contained and needs none of the optional components. The FastAPI backend and
+Next.js dashboard exist for teams that want centralized cross-repository tracking; the CLI pushes only
+redacted fingerprints and metadata to them, never raw secrets.
+
+## Quick Start
+
+```bash
+# From source
+git clone https://github.com/Ruddxxy/Flash-Audit-Core.git
+cd Flash-Audit-Core
+cargo build --release
+./target/release/flash_audit .          # scan current directory
+
+# Or via Cargo
+cargo install flash_audit
+```
+
+Common invocations:
+
+```bash
+flash_audit /path/to/repo                       # JSON to stdout
+flash_audit --format sarif . > results.sarif    # SARIF for GitHub Advanced Security
+flash_audit --git-diff main .                   # only files changed since main
+flash_audit --staged .                          # only staged files (pre-commit)
+flash_audit --entropy .                          # add Shannon-entropy detection
+flash_audit --rules my-rules.yaml .             # custom ruleset
+```
+
+### CI, pre-commit, Docker
+
+```yaml
+# GitHub Actions
+- uses: Ruddxxy/Flash-Audit-Core@v1
+  with:
+    path: "."
+    format: "sarif"
+    upload-sarif: true
+    fail-on-finding: true
+```
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/Ruddxxy/Flash-Audit-Core
+    rev: v1.0.0
+    hooks:
+      - id: flashaudit
+```
+
+```bash
+# Docker
+docker run --rm -v "$(pwd):/repo" ghcr.io/ruddxxy/flash-audit:latest /repo --format sarif
+```
+
+## How It Works
+
+1. **File loading** (`src/utils/file_loader.rs`) — walks the tree respecting `.gitignore`, rejects binaries
+   via 30+ magic-byte signatures plus null/control-char heuristics, caps files at 100 MB, and memory-maps
+   anything over 10 MB. Invalid UTF-8 is skipped, not fatal.
+2. **Pre-filter** (`src/scanner.rs`) — a single Aho-Corasick pass finds which of the 66 rule keywords appear
+   in the file. Files with no keyword hit never touch the regex engine.
+3. **Validation** — only the rules whose keyword matched are run as full regexes, yielding line numbers and
+   redacted matches.
+4. **State & telemetry** (`src/utils/state.rs`, `telemetry.rs`) — findings are fingerprinted with SHA-256 and
+   diffed against the previous scan to report _new_ vs. _fixed_ secrets; optional non-blocking telemetry can
+   forward this to the backend.
+
+Rules live in `rules.yaml` (embedded into the binary at build time via `include_str!`) and can be overridden
+with `--rules`. Each rule carries an `id`, a `pattern`, and `risk` metadata (`class`, `impact`).
+
+## Testing
+
+```bash
+cargo test            # Rust engine unit tests (8)
+cd backend && pytest  # backend API tests (46)
+```
+
+- **8 Rust unit tests** (`src/scanner.rs`) cover detection, correct line numbers, multi-byte-safe redaction,
+  fingerprint determinism, keyword extraction, and that all 66 embedded rules compile.
+- **46 backend tests** (`backend/tests/`) cover auth/RBAC, CLI ingest endpoints, findings, remediation,
+  security, and health.
+
+Both suites run in CI on every push (see the badges above).
+
+## Reference
+
+### CLI options
+
+| Option                | Default  | Description                       |
+| --------------------- | -------- | --------------------------------- |
+| `[PATH]`              | `.`      | Directory to scan                 |
+| `-f, --format`        | json     | Output format: `json` or `sarif`  |
+| `--rules`             | embedded | Path to custom rules.yaml         |
+| `--git-diff <REF>`    | –        | Only scan files changed since REF |
+| `--staged`            | false    | Only scan staged files            |
+| `--entropy`           | false    | Enable entropy scanning           |
+| `--entropy-threshold` | 4.5      | Entropy threshold                 |
+| `--report-to <URL>`   | –        | Telemetry endpoint                |
+| `--org <ORG>`         | –        | Organization context              |
+| `--repo <REPO>`       | –        | Repository context                |
+| `--api-key <KEY>`     | env      | API key (`FLASHAUDIT_API_KEY`)    |
+| `-v, --verbose`       | false    | Debug output                      |
+
+### Exit codes
 
 | Code | Meaning       |
 | ---- | ------------- |
@@ -241,54 +187,14 @@ Scanned 500 files in 0.12s. 2 errors. 3 secrets found (2 new, 1 fixed).
 | 1    | Secrets found |
 | 2    | Error         |
 
-## Custom Rules
+### Detected secrets (66 patterns)
 
-Create `rules.yaml`:
+Private keys (RSA, OpenSSH, EC, PGP, DSA, PuTTY) · AWS · GitHub (`ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`) ·
+GitLab · Slack · Google/Firebase · Stripe · Azure · DigitalOcean · Datadog · Cloudflare · OpenAI/Anthropic ·
+HashiCorp Vault · database URLs (`postgres://`, `mysql://`, `mongodb://`, `redis://`) · SendGrid · Twilio ·
+NPM · PyPI · Shopify · Discord · Heroku · JWT.
 
-```yaml
-rules:
-  - id: MY_API_KEY
-    pattern: "mycompany_[a-zA-Z0-9]{32}"
-    description: "MyCompany API Key"
-    risk:
-      class: api_key
-      impact: high
-
-  - id: INTERNAL_TOKEN
-    pattern: "internal_token_[a-zA-Z0-9]{24}"
-    description: "Internal Service Token"
-    risk:
-      class: credential
-      impact: critical
-```
-
-Use: `flash_audit --rules rules.yaml .`
-
-## Detected Secrets (66 Patterns)
-
-| Category        | Patterns                                                   |
-| --------------- | ---------------------------------------------------------- |
-| Private Keys    | RSA, OpenSSH, EC, PGP, DSA, PuTTY                          |
-| AWS             | Access Key (AKIA), Secret Key                              |
-| GitHub          | ghp*, gho*, ghu*, ghs*, ghr\_                              |
-| GitLab          | glpat-, GR1348941                                          |
-| Slack           | xoxb-, xoxp-, webhooks                                     |
-| Google/Firebase | AIza, OAuth Client, firebaseio.com                         |
-| Stripe          | sk*live*, sk*test*, rk*live*                               |
-| Azure           | Storage Key, Connection String, SAS Token                  |
-| DigitalOcean    | dop*v1*, doo*v1*, dor*v1*                                  |
-| Datadog         | API Key, App Key                                           |
-| Cloudflare      | API Key, API Token                                         |
-| AI Services     | OpenAI (sk-), Anthropic (sk-ant-)                          |
-| HashiCorp Vault | hvs., hvb.                                                 |
-| Database URLs   | postgres://, mysql://, mongodb://, redis://                |
-| Other           | SendGrid, Twilio, NPM, PyPI, Shopify, Discord, Heroku, JWT |
-
-## Backend API (Optional)
-
-FlashAudit includes an optional Python backend for centralized tracking.
-
-### Quick Start
+### Optional backend
 
 ```bash
 cd backend
@@ -297,22 +203,6 @@ export ADMIN_KEY="your-secure-admin-key"
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-### Docker Compose
-
-```bash
-docker-compose up -d backend
-```
-
-### Deploy to Render
-
-1. Connect your GitHub repo to [Render](https://render.com)
-2. Set root directory to `backend/`
-3. Build: `pip install -r requirements.txt`
-4. Start: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-5. Add `ADMIN_KEY` environment variable
-
-### API Endpoints
-
 | Endpoint                      | Method | Auth        | Description         |
 | ----------------------------- | ------ | ----------- | ------------------- |
 | `/health`                     | GET    | None        | Health check        |
@@ -320,37 +210,6 @@ docker-compose up -d backend
 | `/api/v1/events`              | POST   | X-API-Key   | Ingest scan events  |
 | `/api/v1/admin/organizations` | POST   | X-Admin-Key | Create organization |
 
-### Connect Scanner to Backend
-
-```bash
-export FLASHAUDIT_API_KEY="your-org-api-key"
-flash_audit . --report-to https://your-backend.com/api/v1/events \
-  --org myorg --repo myrepo
-```
-
-## Architecture
-
-```
-src/
-├── main.rs             # CLI, orchestration
-├── scanner.rs          # Hybrid Aho-Corasick + Regex engine
-└── utils/
-    ├── config.rs       # YAML rules loader
-    ├── file_loader.rs  # Smart file loading
-    ├── entropy.rs      # Shannon entropy
-    ├── sarif.rs        # SARIF output
-    ├── state.rs        # Stateful tracking
-    └── telemetry.rs    # Event reporting
-
-rules.yaml              # Default rules (embedded)
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
-
-Free to use, modify, and distribute.
+MIT — see [LICENSE](LICENSE).
