@@ -1,7 +1,11 @@
 # Rust
 /target
 
-# Scanner test fixtures (sample secret files used for manual testing)
+# Scanner test fixtures are NOT committed. A corpus holding one valid-looking secret per
+# rule is, by design, indistinguishable from real credentials, so committing it trips
+# GitHub secret-scanning push protection. The full-ruleset test generates its corpus at
+# runtime instead -- see generated_corpus() in src/scanner.rs. This keeps the repository
+# free of any detectable secret.
 tests/fixtures/
 secrets_test.env
 .flashaudit_state.json
@@ -48,3 +52,6 @@ docker-compose.override.yml
 
 # Private working documents (not for public repo)
 ACQUISITION_AUDIT.md
+
+# Internal pre-fix audit write-up; describes the broken state, not for the repo
+FLASHAUDIT.md
