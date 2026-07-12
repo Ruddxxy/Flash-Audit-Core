@@ -31,7 +31,7 @@ FROM alpine:3.19
 
 LABEL org.opencontainers.image.title="FlashAudit"
 LABEL org.opencontainers.image.description="High-performance secrets scanner"
-LABEL org.opencontainers.image.source="https://github.com/Ruddxxy/Flash-Audit"
+LABEL org.opencontainers.image.source="https://github.com/Ruddxxy/Flash-Audit-Core"
 LABEL org.opencontainers.image.licenses="MIT"
 
 # Install git (required for --staged and --git-diff functionality)

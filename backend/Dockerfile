@@ -6,7 +6,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="FlashAudit Backend"
 LABEL org.opencontainers.image.description="FlashAudit Dashboard and API Server"
-LABEL org.opencontainers.image.source="https://github.com/Ruddxxy/Flash-Audit"
+LABEL org.opencontainers.image.source="https://github.com/Ruddxxy/Flash-Audit-Core"
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1

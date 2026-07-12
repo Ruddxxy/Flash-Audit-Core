@@ -137,7 +137,7 @@ impl SarifReport {
                     driver: SarifDriver {
                         name: "FlashAudit".to_string(),
                         version: env!("CARGO_PKG_VERSION").to_string(),
-                        information_uri: "https://github.com/Ruddxxy/Flash-Audit".to_string(),
+                        information_uri: "https://github.com/Ruddxxy/Flash-Audit-Core".to_string(),
                         rules,
                     },
                 },

@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 # =============================================================================
 # FlashAudit Windows Installer
-# Usage: irm https://raw.githubusercontent.com/Ruddxxy/Flash-Audit/main/install.ps1 | iex
+# Usage: irm https://raw.githubusercontent.com/Ruddxxy/Flash-Audit-Core/main/install.ps1 | iex
 # =============================================================================
 
 param(
@@ -10,7 +10,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Repo = "Ruddxxy/Flash-Audit"
+$Repo = "Ruddxxy/Flash-Audit-Core"
 
 function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Green }
 function Write-Warn { param($Message) Write-Host "[WARN] $Message" -ForegroundColor Yellow }

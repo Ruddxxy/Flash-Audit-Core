@@ -67,7 +67,7 @@ runs:
       shell: bash
       run: |
         if [ "${{ inputs.version }}" = "latest" ]; then
-          VERSION=$(curl -sSf https://api.github.com/repos/Ruddxxy/Flash-Audit/releases/latest | grep '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
+          VERSION=$(curl -sSf https://api.github.com/repos/Ruddxxy/Flash-Audit-Core/releases/latest | grep '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
           if [ -z "$VERSION" ]; then
             echo "::error::Failed to determine latest version"
             exit 1
@@ -96,7 +96,7 @@ runs:
           *) echo "::error::Unsupported OS: $OS"; exit 1 ;;
         esac
 
-        DOWNLOAD_URL="https://github.com/Ruddxxy/Flash-Audit/releases/download/v${{ steps.version.outputs.version }}/${NAME}.tar.gz"
+        DOWNLOAD_URL="https://github.com/Ruddxxy/Flash-Audit-Core/releases/download/v${{ steps.version.outputs.version }}/${NAME}.tar.gz"
 
         echo "Downloading FlashAudit from: $DOWNLOAD_URL"
         curl -sSfL "$DOWNLOAD_URL" | tar -xz

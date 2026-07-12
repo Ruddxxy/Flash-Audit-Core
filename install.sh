@@ -3,12 +3,12 @@ set -euo pipefail
 
 # =============================================================================
 # FlashAudit Installer
-# Usage: curl -sSfL https://raw.githubusercontent.com/Ruddxxy/Flash-Audit/main/install.sh | bash
+# Usage: curl -sSfL https://raw.githubusercontent.com/Ruddxxy/Flash-Audit-Core/main/install.sh | bash
 # =============================================================================
 
 VERSION="${FLASHAUDIT_VERSION:-latest}"
 INSTALL_DIR="${FLASHAUDIT_INSTALL_DIR:-/usr/local/bin}"
-REPO="Ruddxxy/Flash-Audit"
+REPO="Ruddxxy/Flash-Audit-Core"
 
 # Colors for output
 RED='\033[0;31m'

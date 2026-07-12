@@ -120,7 +120,7 @@ flash_audit --rules my-rules.yaml .             # custom ruleset
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Ruddxxy/Flash-Audit-Core
-    rev: v1.0.0
+    rev: v1.1.1
     hooks:
       - id: flashaudit
 ```
