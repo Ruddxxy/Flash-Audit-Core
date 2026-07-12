@@ -4,7 +4,7 @@ version = "1.1.1"
 edition = "2021"
 rust-version = "1.70"
 license = "MIT"
-description = "High-performance secrets scanner written in Rust. 8-12x faster than Gitleaks with 6x fewer false positives."
+description = "High-performance secrets scanner written in Rust. 4-10x faster than Gitleaks on real corpora (benchmarks in repo)."
 repository = "https://github.com/Ruddxxy/Flash-Audit-Core"
 homepage = "https://github.com/Ruddxxy/Flash-Audit-Core"
 documentation = "https://github.com/Ruddxxy/Flash-Audit-Core#readme"
@@ -13,12 +13,12 @@ keywords = ["security", "secrets", "scanner", "gitleaks", "sast"]
 categories = ["command-line-utilities", "development-tools"]
 authors = ["FlashAudit <mahapatro32@gmail.com>"]
 include = [
-    "src/**/*",
-    "Cargo.toml",
-    "Cargo.lock",
-    "LICENSE",
-    "README.md",
-    "rules.yaml",
+    "/src/**/*",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/LICENSE",
+    "/README.md",
+    "/rules.yaml",
 ]
 
 [dependencies]
