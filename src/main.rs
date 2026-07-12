@@ -82,8 +82,11 @@ fn get_git_diff_files(base_ref: &str, repo_path: &PathBuf) -> Result<Vec<PathBuf
         return Err(format!("Invalid git ref: {}", base_ref));
     }
 
+    // base_ref goes BEFORE the `--`. With it after, git reads the ref as a pathspec, the
+    // diff matches nothing, and every scan reports clean. The trailing `--` still
+    // terminates the pathspec list so a ref that also names a file stays unambiguous.
     let output = Command::new("git")
-        .args(["diff", "--name-only", "--diff-filter=ACMR", "--", base_ref])
+        .args(["diff", "--name-only", "--diff-filter=ACMR", base_ref, "--"])
         .current_dir(repo_path)
         .output()
         .map_err(|e| format!("Failed to run git: {}", e))?;
