@@ -1,6 +1,6 @@
 # FlashAudit
 
-**A Rust secrets scanner that clears a 57k-file repository in ~1.2 seconds — an order of magnitude faster than regex-only scanners — so secret detection fits inside a pre-commit hook instead of a nightly job.**
+**A Rust secrets scanner that clears the 61k-file rust-lang/rust checkout in ~0.6 seconds — 4–10× faster than Gitleaks across three real corpora — so secret detection fits inside a pre-commit hook instead of a nightly job.**
 
 [![CI](https://github.com/Ruddxxy/Flash-Audit-Core/actions/workflows/audit.yml/badge.svg)](https://github.com/Ruddxxy/Flash-Audit-Core/actions/workflows/audit.yml)
 [![Backend CI](https://github.com/Ruddxxy/Flash-Audit-Core/actions/workflows/backend.yml/badge.svg)](https://github.com/Ruddxxy/Flash-Audit-Core/actions/workflows/backend.yml)
@@ -9,8 +9,9 @@
 FlashAudit finds leaked credentials — API keys, private keys, database URLs, tokens — in source trees,
 git diffs, and staged changes. It pairs an Aho-Corasick keyword pre-filter with 66 precise regex rules so
 the expensive patterns only run on files that already contain a matching trigger. The result is fast enough
-to run on every commit, precise enough that developers don't learn to ignore it, and CI-ready via SARIF
-output for GitHub Advanced Security.
+to run on every commit, quiet enough to keep a pre-commit gate usable (5 findings vs. Gitleaks' 32 across
+the three benchmark corpora below — every one a test fixture or docs example, on both sides), and CI-ready
+via SARIF output for GitHub Advanced Security.
 
 ## Demo
 
@@ -36,24 +37,28 @@ process except as a salted SHA-256 fingerprint used for cross-scan deduplication
 
 ## Performance
 
-Wall-clock scan time, FlashAudit vs. a regex-only baseline (Gitleaks), single run each:
+Wall-clock scan time, FlashAudit 1.1.1 vs. a regex-only baseline (Gitleaks 8.30.1, `dir` mode), measured
+with `hyperfine --warmup 3 --runs 10` on shallow checkouts (16-core Linux; median ± σ):
 
-| Repository    | Files  | FlashAudit | Gitleaks | Speedup |
-| ------------- | ------ | ---------- | -------- | ------- |
-| Express       | 240    | **0.03s**  | 0.09s    | 3×      |
-| Django        | 7,033  | **0.51s**  | 3.93s    | 8×      |
-| Rust compiler | 57,706 | **1.24s**  | 15.23s   | **12×** |
+| Repository                  | Files  | FlashAudit         | Gitleaks       | Speedup   | Findings (FA / GL) |
+| --------------------------- | ------ | ------------------ | -------------- | --------- | ------------------ |
+| Express (`ba00676`)         | 213    | **0.129s ± 0.002** | 0.536s ± 0.026 | 4.2×      | 0 / 0              |
+| Django (`65a9f14`)          | 7,070  | **0.218s ± 0.005** | 1.811s ± 0.048 | 8.3×      | 1 / 8              |
+| rust-lang/rust (`b69e089e`) | 60,942 | **0.575s ± 0.024** | 6.033s ± 0.208 | **10.5×** | 4 / 24             |
 
-The speedup grows with repository size: on small trees the fixed startup cost dominates, but on large trees
-the Aho-Corasick pre-filter skips the regex engine entirely for files with no keyword hit, which is most of
-them. Numbers are hardware- and version-dependent — reproduce them yourself:
+Every finding on both sides is a dummy value in a test fixture or docs example — the corpora are clean —
+so the findings column doubles as a false-positive count. Raw hyperfine output is committed in
+`bench-results.txt`. The speedup grows with repository size: on small trees the fixed startup cost
+dominates, but on large trees the Aho-Corasick pre-filter skips the regex engine entirely for files with
+no keyword hit, which is most of them. Numbers are hardware- and version-dependent — reproduce them
+yourself:
 
 ```bash
-# Requires: hyperfine, gitleaks, and a target repo checked out at ./target-repo
+# Requires: hyperfine, gitleaks >= 8.19, and a target repo checked out at ./target-repo
 cargo build --release
-hyperfine --warmup 1 \
+hyperfine --warmup 3 --runs 10 -i \
   './target/release/flash_audit ./target-repo' \
-  'gitleaks detect --source ./target-repo --no-git'
+  'gitleaks dir ./target-repo --no-banner'
 ```
 
 ## Architecture
@@ -89,8 +94,8 @@ cd Flash-Audit-Core
 cargo build --release
 ./target/release/flash_audit .          # scan current directory
 
-# Or via Cargo
-cargo install flash_audit
+# Or via Cargo, straight from the release tag
+cargo install --locked --git https://github.com/Ruddxxy/Flash-Audit-Core --tag v1.1.1
 ```
 
 Common invocations:
@@ -127,7 +132,7 @@ repos:
 
 ```bash
 # Docker
-docker run --rm -v "$(pwd):/repo" ghcr.io/ruddxxy/flash-audit:latest /repo --format sarif
+docker run --rm -v "$(pwd):/repo" ghcr.io/ruddxxy/flash-audit-core:latest /repo --format sarif
 ```
 
 ## How It Works

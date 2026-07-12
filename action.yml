@@ -1,5 +1,5 @@
 name: 'FlashAudit Secrets Scanner'
-description: 'High-performance secrets scanner - 8-12x faster than Gitleaks with 6x fewer false positives'
+description: 'High-performance secrets scanner - 4-10x faster than Gitleaks on real corpora (benchmarks in repo)'
 author: 'FlashAudit'
 
 branding:

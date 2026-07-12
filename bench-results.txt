@@ -54,3 +54,37 @@ Summary
   60 rules (0 always-run) = unreachable floor ran
     1.22 ± 0.08 times faster than 61 rules (only DISCORD_BOT_TOKEN always-run) = best case for keyword extraction
     1.40 ± 0.07 times faster than 66 rules, as shipped (6 always-run)
+
+----------------------------------------------------------------------------
+COMPARATIVE: FlashAudit vs Gitleaks on three clean OSS corpora
+----------------------------------------------------------------------------
+flash_audit  : 1.1.1 (cargo build --release)
+gitleaks     : 8.30.1 (dir mode, --no-banner)
+timing method: hyperfine 1.20.0 (--warmup 3 --runs 10 -i)
+host         : Linux 6.8.0-124-generic | 16 logical cores
+corpora      : shallow clones — express @ ba00676, django @ 65a9f14,
+               rust-lang/rust @ b69e089e
+command      : hyperfine --warmup 3 --runs 10 -i \
+                 './target/release/flash_audit <corpus>' \
+                 'gitleaks dir <corpus> --no-banner'
+
+express (213 files)
+  flash_audit  median 0.129 s ± 0.002 s   (mean 0.129 s, range 0.126–0.133 s)
+  gitleaks     median 0.536 s ± 0.026 s   (mean 0.541 s, range 0.510–0.579 s)
+  speedup      4.2x    findings: flash_audit 0, gitleaks 0
+
+django (7,070 files)
+  flash_audit  median 0.218 s ± 0.005 s   (mean 0.219 s, range 0.215–0.231 s)
+  gitleaks     median 1.811 s ± 0.048 s   (mean 1.833 s, range 1.771–1.900 s)
+  speedup      8.3x    findings: flash_audit 1, gitleaks 8
+
+rust-lang/rust (60,942 files)
+  flash_audit  median 0.575 s ± 0.024 s   (mean 0.585 s, range 0.564–0.626 s)
+  gitleaks     median 6.033 s ± 0.208 s   (mean 5.938 s, range 5.601–6.115 s)
+  speedup      10.5x   findings: flash_audit 4, gitleaks 24
+
+Every finding on both sides is a dummy value in a test fixture or docs
+example (verified by hand: Django docs REDIS_URI example; rust-lang CI
+test-jobs fixtures; Gitleaks additionally flags Django csrf/test-client
+test values). The corpora contain no real secrets, so the findings column
+is a false-positive count: 5 total for flash_audit vs 32 for gitleaks.
